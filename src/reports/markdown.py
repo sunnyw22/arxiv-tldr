@@ -1,12 +1,21 @@
 from datetime import datetime, timezone
 
+from src.profiles.schema import UserProfile
 from src.ranking.rerank_llm import RankedPaper
 from src.summarization.llm_client import TokenUsage
+
+SCORING_RUBRIC = """| Score | Meaning |
+|-------|---------|
+| 9-10 | Directly addresses your active project or core methods. Must-read. |
+| 7-8 | Same subfield with relevant methods or insights. Likely useful. |
+| 4-6 | Adjacent field or tangentially related technique. Might be interesting. |
+| 1-3 | Different field or minimal overlap with your work. |"""
 
 
 def generate_markdown_report(
     ranked_papers: list[RankedPaper],
     token_usage: TokenUsage | None = None,
+    profile: UserProfile | None = None,
     title: str = "Research Radar Digest",
 ) -> str:
     """Generate a markdown digest from ranked papers.
@@ -14,6 +23,7 @@ def generate_markdown_report(
     Args:
         ranked_papers: Papers with scores and summaries, sorted by relevance.
         token_usage: Optional token usage stats to include in footer.
+        profile: Optional user profile to display search context.
         title: Report title.
 
     Returns:
@@ -26,6 +36,24 @@ def generate_markdown_report(
         f"*Papers reviewed: showing top {len(ranked_papers)}*",
         "",
     ]
+
+    # Search context
+    if profile:
+        lines.append("## Search Profile")
+        lines.append("")
+        if profile.topic_interests:
+            lines.append(f"**Topic interests:** {', '.join(profile.topic_interests)}")
+        if profile.project_context:
+            lines.append(f"**Research context:** {profile.project_context}")
+        if profile.expertise_level:
+            lines.append(f"**Expertise level:** {profile.expertise_level}")
+        lines.append("")
+
+    # Scoring rubric
+    lines.append("## Scoring Rubric")
+    lines.append("")
+    lines.append(SCORING_RUBRIC)
+    lines.append("")
 
     if not ranked_papers:
         lines.append("No papers matched your profile for this run.")

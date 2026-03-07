@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+from src.profiles.schema import UserProfile
 from src.ranking.rerank_llm import RankedPaper
 from src.summarization.llm_client import TokenUsage
 
@@ -7,6 +8,7 @@ from src.summarization.llm_client import TokenUsage
 def generate_html_report(
     ranked_papers: list[RankedPaper],
     token_usage: TokenUsage | None = None,
+    profile: UserProfile | None = None,
     title: str = "Research Radar Digest",
 ) -> str:
     """Generate an HTML digest from ranked papers.
@@ -14,6 +16,7 @@ def generate_html_report(
     Args:
         ranked_papers: Papers with scores and summaries, sorted by relevance.
         token_usage: Optional token usage stats to include in footer.
+        profile: Optional user profile to display search context.
         title: Report title.
 
     Returns:
@@ -53,6 +56,40 @@ def generate_html_report(
     footer = ""
     if token_usage:
         footer = f'<p class="footer">{_escape(token_usage.report())}</p>'
+
+    # Search profile section
+    profile_html = ""
+    if profile:
+        profile_items = ""
+        if profile.topic_interests:
+            profile_items += f"<li><strong>Topic interests:</strong> {_escape(', '.join(profile.topic_interests))}</li>"
+        if profile.project_context:
+            profile_items += f"<li><strong>Research context:</strong> {_escape(profile.project_context)}</li>"
+        if profile.expertise_level:
+            profile_items += f"<li><strong>Expertise level:</strong> {_escape(profile.expertise_level)}</li>"
+        profile_html = f"""
+        <div class="section">
+            <h2>Search Profile</h2>
+            <ul>{profile_items}</ul>
+        </div>
+        """
+
+    # Scoring rubric
+    rubric_html = """
+    <div class="section">
+        <h2>Scoring Rubric</h2>
+        <table class="rubric">
+            <tr><td class="score-cell" style="background-color: #2d8a4e; color: white;">9-10</td>
+                <td>Directly addresses your active project or core methods. Must-read.</td></tr>
+            <tr><td class="score-cell" style="background-color: #5a9e6f; color: white;">7-8</td>
+                <td>Same subfield with relevant methods or insights. Likely useful.</td></tr>
+            <tr><td class="score-cell" style="background-color: #b8860b; color: white;">4-6</td>
+                <td>Adjacent field or tangentially related technique. Might be interesting.</td></tr>
+            <tr><td class="score-cell" style="background-color: #999; color: white;">1-3</td>
+                <td>Different field or minimal overlap with your work.</td></tr>
+        </table>
+    </div>
+    """
 
     no_papers = ""
     if not ranked_papers:
@@ -125,6 +162,41 @@ def generate_html_report(
         .links a:hover {{
             text-decoration: underline;
         }}
+        .section {{
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin-bottom: 16px;
+        }}
+        .section h2 {{
+            margin-top: 0;
+            font-size: 1em;
+            color: #555;
+        }}
+        .section ul {{
+            margin: 0;
+            padding-left: 20px;
+        }}
+        .section li {{
+            margin-bottom: 4px;
+            line-height: 1.5;
+        }}
+        .rubric {{
+            width: 100%;
+            border-collapse: collapse;
+        }}
+        .rubric td {{
+            padding: 6px 12px;
+            border-bottom: 1px solid #eee;
+            font-size: 0.9em;
+        }}
+        .score-cell {{
+            width: 60px;
+            text-align: center;
+            font-weight: bold;
+            border-radius: 4px;
+        }}
         .footer {{
             color: #999;
             font-size: 0.8em;
@@ -136,6 +208,8 @@ def generate_html_report(
 <body>
     <h1>{_escape(title)}</h1>
     <p class="subtitle">Generated: {now} | Showing top {len(ranked_papers)} papers</p>
+    {profile_html}
+    {rubric_html}
     {no_papers}
     {papers_html}
     {footer}
