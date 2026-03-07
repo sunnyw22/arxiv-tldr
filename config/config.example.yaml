@@ -1,0 +1,71 @@
+# Research Radar — Example Configuration
+# Copy this file to config.yaml and customize for your research profile.
+
+# --- User Profile ---
+profile:
+  # Broad research domains (used for category filtering)
+  research_domains:
+    - "cs.AI"
+    - "cs.LG"
+
+  # Specific topic interests (used for relevance scoring)
+  topic_interests:
+    - "large language models"
+    - "retrieval-augmented generation"
+    - "reasoning in LLMs"
+
+  # Keywords or phrases that boost relevance
+  required_signals:
+    - "benchmark"
+    - "evaluation"
+
+  # Keywords or phrases that reduce relevance (papers matching these are deprioritized)
+  negative_filters:
+    - "survey only"
+    - "workshop abstract"
+
+  # Short description of your current research focus (helps LLM-based ranking)
+  project_context: >
+    I am studying how retrieval-augmented generation can improve
+    factual accuracy in domain-specific question answering.
+
+  # Your expertise level: beginner, intermediate, advanced, expert
+  expertise_level: "advanced"
+
+# --- Summary Preferences ---
+summary:
+  # Style: concise, detailed, or technical
+  style: "concise"
+
+  # Maximum number of papers in the daily digest
+  max_papers: 15
+
+# --- Output Preferences ---
+output:
+  # Output formats to generate: markdown, html
+  formats:
+    - "markdown"
+    - "html"
+
+  # Directory for generated reports
+  output_dir: "output/"
+
+# --- LLM Provider ---
+llm:
+  # Provider and model (via litellm format)
+  model: "anthropic/claude-sonnet-4-20250514"
+
+  # Temperature for summarization
+  temperature: 0.3
+
+  # Maximum tokens per summary
+  max_tokens: 1024
+
+# --- Scheduling ---
+schedule:
+  # For GitHub Actions or cron-based runs
+  # Cron expression for daily digest (default: 8am UTC)
+  cron: "0 8 * * *"
+
+  # Timezone for display purposes
+  timezone: "UTC"

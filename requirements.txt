@@ -1,0 +1,4 @@
+litellm
+pyyaml
+feedparser
+requests
