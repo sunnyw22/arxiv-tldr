@@ -8,6 +8,8 @@ output/
 *.db
 .claude/
 .DS_Store
+vault/
+RESEARCH_RADAR_PLAN.md
 *.egg-info/
 dist/
 build/

@@ -61,6 +61,10 @@ At the end of a task, report:
 - What remains unverified
 - Any risks or assumptions
 
+## Security
+
+- NEVER commit API keys, secrets, or credentials into the repo. All secrets must go in `.env` (which is gitignored). Use environment variables or config references to access them at runtime.
+
 ## What to avoid
 
 - Skipping context gathering before implementation
