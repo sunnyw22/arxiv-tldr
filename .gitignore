@@ -5,6 +5,7 @@ __pycache__/
 .venv/
 venv/
 output/
+data/
 *.db
 .claude/
 .DS_Store

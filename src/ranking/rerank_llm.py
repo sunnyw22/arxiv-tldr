@@ -45,7 +45,12 @@ def rerank_and_summarize(
         all_ranked.extend(ranked_batch)
 
     all_ranked.sort(key=lambda r: r.relevance_score, reverse=True)
-    return all_ranked[:top_n]
+
+    # Include all papers tied at the cutoff score rather than arbitrarily dropping some
+    if len(all_ranked) > top_n:
+        cutoff_score = all_ranked[top_n - 1].relevance_score
+        return [r for r in all_ranked if r.relevance_score >= cutoff_score]
+    return all_ranked
 
 
 def _rank_batch(
