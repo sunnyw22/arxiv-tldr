@@ -9,6 +9,9 @@ from src.core.config import LLMConfig
 # Load .env file for API keys
 load_dotenv()
 
+# Drop unsupported params rather than crashing (e.g., GPT-5 doesn't support temperature)
+litellm.drop_params = True
+
 
 def strip_markdown_fences(text: str) -> str:
     """Strip markdown code fences from LLM responses."""
