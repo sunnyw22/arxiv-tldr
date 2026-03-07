@@ -17,29 +17,42 @@ def strip_markdown_fences(text: str) -> str:
 
 @dataclass
 class TokenUsage:
-    """Tracks cumulative token usage across LLM calls."""
+    """Tracks cumulative token usage and cost across LLM calls."""
 
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    total_cost: float = 0.0
     call_count: int = 0
 
-    def add(self, usage):
-        """Add usage from a single LLM response."""
+    def add(self, response):
+        """Add usage and cost from a single LLM response."""
+        usage = getattr(response, "usage", response)
         if usage:
             self.prompt_tokens += getattr(usage, "prompt_tokens", 0) or 0
             self.completion_tokens += getattr(usage, "completion_tokens", 0) or 0
             self.total_tokens += getattr(usage, "total_tokens", 0) or 0
             self.call_count += 1
 
+    def add_cost(self, response):
+        """Compute and add cost from a litellm response."""
+        try:
+            cost = litellm.completion_cost(completion_response=response)
+            self.total_cost += cost
+        except Exception:
+            pass  # Cost data unavailable for this model
+
     def report(self) -> str:
-        """Return a human-readable usage report."""
-        return (
+        """Return a human-readable usage and cost report."""
+        report = (
             f"LLM Usage: {self.call_count} calls, "
             f"{self.prompt_tokens:,} prompt tokens, "
             f"{self.completion_tokens:,} completion tokens, "
             f"{self.total_tokens:,} total tokens"
         )
+        if self.total_cost > 0:
+            report += f", estimated cost: ${self.total_cost:.6f}"
+        return report
 
 
 # Global token tracker — reset per pipeline run
@@ -51,6 +64,7 @@ def reset_token_usage():
     token_usage.prompt_tokens = 0
     token_usage.completion_tokens = 0
     token_usage.total_tokens = 0
+    token_usage.total_cost = 0.0
     token_usage.call_count = 0
 
 
@@ -107,7 +121,8 @@ def call_llm(
             f"LLM API call failed for model '{config.model}': {e}"
         )
 
-    token_usage.add(response.usage)
+    token_usage.add(response)
+    token_usage.add_cost(response)
 
     content = response.choices[0].message.content
     if json_mode:
