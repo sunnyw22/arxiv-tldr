@@ -76,6 +76,7 @@ After each implementation block:
 
 - **Avoid hardcoding paths and values** — make things configurable (e.g., accept `--config` flag with a sensible default fallback)
 - **Keep things flexible** — prefer parameters over constants where the value might reasonably vary
+- **Prioritize efficiency** — prefer vectorized operations over loops where available, use appropriate data structures (sets for membership checks, dicts for lookups), and batch I/O operations when possible
 
 ## What to avoid
 
