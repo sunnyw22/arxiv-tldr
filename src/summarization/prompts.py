@@ -6,11 +6,22 @@ def build_synonym_prompt(profile: UserProfile) -> str:
     """Build prompt for LLM synonym/related-term expansion."""
     interests = ", ".join(profile.topic_interests) if profile.topic_interests else "not specified"
     context = profile.project_context or "not specified"
+    level = profile.expertise_level or "intermediate"
 
-    return f"""Given the following researcher profile, generate a list of related terms, synonyms, and adjacent concepts that would help identify relevant academic papers. Include abbreviations, alternative phrasings, and closely related subfields.
+    return f"""You are helping a researcher find relevant academic papers. Given their profile, generate related search terms.
 
-**Topic interests:** {interests}
-**Research context:** {context}
+**Researcher Profile:**
+- Topic interests: {interests}
+- Research context: {context}
+- Expertise level: {level}
+
+Generate a list of related terms, synonyms, and adjacent concepts that would help identify papers relevant to THIS SPECIFIC researcher. Include abbreviations, alternative phrasings, and closely related subfields.
+
+IMPORTANT constraints:
+- Stay within the researcher's domain and expertise. Do not expand into unrelated fields.
+- Consider the research context — terms should help find papers useful for their specific project.
+- Include technical synonyms and abbreviations (e.g., "RAG" for "retrieval-augmented generation").
+- Do NOT include terms from unrelated disciplines just because they share a word.
 
 Return a JSON object with a single key "expanded_terms" containing a flat list of strings. Include the original terms plus synonyms and related concepts. Aim for 20-40 terms total.
 
@@ -46,9 +57,17 @@ Categories: {", ".join(p.categories)}
 **Papers to evaluate:**
 {papers_text}
 
+**Scoring rubric** (use these anchors consistently):
+- **9-10**: Directly addresses the researcher's active project or core methods. A must-read.
+- **7-8**: Same subfield with relevant methods, results, or insights. Likely useful.
+- **4-6**: Adjacent field or tangentially related technique. Might be interesting.
+- **1-3**: Different field or minimal overlap with the researcher's work.
+
+Score based on how useful this paper would be to THIS SPECIFIC researcher given their project context, not general paper quality.
+
 For each paper, provide:
-1. **relevance_score**: integer 1-10 (10 = highly relevant to researcher's interests)
-2. **reasoning**: one sentence explaining why this score (reference specific interests or context)
+1. **relevance_score**: integer 1-10 using the rubric above
+2. **reasoning**: one sentence explaining why this score, referencing the researcher's specific interests or project context
 3. **summary**: 2-3 sentence summary tailored to the researcher's expertise level ({level})
 
 Return a JSON object with a single key "papers" containing a list of objects, one per paper, in the same order as provided. Each object must have keys: "paper_id", "relevance_score", "reasoning", "summary".

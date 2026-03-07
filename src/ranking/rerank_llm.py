@@ -62,28 +62,35 @@ def _rank_batch(
 
     try:
         data = json.loads(response)
-        results = []
-        for item in data.get("papers", []):
-            paper_id = item.get("paper_id", "")
-            paper = paper_map.get(paper_id)
-            if paper is None:
-                # Try matching by position if ID doesn't match
-                idx = data["papers"].index(item)
-                if idx < len(papers):
-                    paper = papers[idx]
-                else:
-                    continue
-
-            results.append(RankedPaper(
-                paper=paper,
-                relevance_score=int(item.get("relevance_score", 0)),
-                reasoning=item.get("reasoning", ""),
-                summary=item.get("summary", ""),
-            ))
-        return results
-    except (json.JSONDecodeError, KeyError, ValueError):
-        # If LLM response is unparseable, return papers with score 0
+    except json.JSONDecodeError as e:
+        print(f"  [WARNING] LLM returned invalid JSON: {e}")
+        print(f"  Response preview: {response[:200]}")
         return [
-            RankedPaper(paper=p, relevance_score=0, reasoning="LLM response parsing failed", summary="")
+            RankedPaper(paper=p, relevance_score=0, reasoning="LLM returned invalid JSON", summary="")
             for p in papers
         ]
+
+    if "papers" not in data:
+        print(f"  [WARNING] LLM response missing 'papers' key. Keys found: {list(data.keys())}")
+        return [
+            RankedPaper(paper=p, relevance_score=0, reasoning="LLM response missing expected structure", summary="")
+            for p in papers
+        ]
+
+    results = []
+    for idx, item in enumerate(data["papers"]):
+        paper_id = item.get("paper_id", "")
+        paper = paper_map.get(paper_id)
+        if paper is None and idx < len(papers):
+            # Fallback: match by position if ID doesn't match
+            paper = papers[idx]
+        if paper is None:
+            continue
+
+        results.append(RankedPaper(
+            paper=paper,
+            relevance_score=int(item.get("relevance_score", 0)),
+            reasoning=item.get("reasoning", "No reasoning provided"),
+            summary=item.get("summary", "No summary provided"),
+        ))
+    return results
