@@ -24,21 +24,47 @@ python -m src.cli digest
 
 ## What It Does
 
-1. **Fetches** recent papers from arXiv and INSPIRE-HEP based on your configured categories and keywords
-2. **Deduplicates** across sources and against previously seen papers (stored in a local SQLite database)
-3. **Expands** your topic interests into related terms using an LLM (synonyms, abbreviations, adjacent concepts)
-4. **Pre-sorts** candidates using keyword matching, then sends the top candidates to an LLM for scoring
-5. **Ranks and summarizes** each paper with a relevance score (1-10), a "why this matters" explanation, and a concise summary
-6. **Generates** timestamped Markdown and HTML reports in the `output/` directory
-7. **Caches** results — subsequent runs with the same profile reuse previous scores, saving LLM costs
+Research Radar runs an automated pipeline that turns your research profile into a personalized paper digest:
+
+```
+┌─────────────┐     ┌─────────────┐     ┌──────────────┐     ┌─────────────┐
+│  Your Config │────▶│ Fetch Papers │────▶│  Deduplicate  │────▶│  Expand     │
+│  (profile +  │     │ (arXiv +     │     │ (cross-source │     │  Keywords   │
+│   sources)   │     │  INSPIRE)    │     │   + vs DB)    │     │  (LLM call) │
+└─────────────┘     └─────────────┘     └──────────────┘     └──────┬──────┘
+                                                                     │
+                    ┌─────────────┐     ┌──────────────┐     ┌──────▼──────┐
+                    │  Generate    │◀────│  LLM Rank +   │◀────│  Pre-sort   │
+                    │  Reports     │     │  Summarize    │     │  (keyword   │
+                    │  (MD + HTML) │     │  (score 1-10) │     │   matching) │
+                    └──────┬──────┘     └──────────────┘     └─────────────┘
+                           │
+                    ┌──────▼──────┐
+                    │  Save to DB  │
+                    │  (cache for  │
+                    │  next run)   │
+                    └─────────────┘
+```
+
+**Step by step:**
+
+1. **Configure** — You define your research interests, expertise level, and project context in a YAML file. You also specify which arXiv categories and INSPIRE keywords to search.
+2. **Fetch** — Papers are pulled from arXiv API and INSPIRE-HEP based on your source settings.
+3. **Deduplicate** — Papers are deduplicated across sources (arXiv ID matching, cross-references) and against previously seen papers in the local database.
+4. **Expand keywords** — An LLM call expands your topic interests into ~40 related terms (synonyms, abbreviations, adjacent concepts like "GNN" → "graph neural network", "message passing").
+5. **Pre-sort** — Expanded keywords are matched against paper titles and abstracts to select the top ~50 candidates. This keeps LLM costs low by filtering before the expensive step.
+6. **LLM rank + summarize** — Candidates are sent to the LLM in batches. Each paper receives a relevance score (1-10) with a concrete rubric, a "why this matters" explanation, and a concise summary.
+7. **Generate reports** — Timestamped Markdown and HTML reports are generated with search metadata, scoring rubric, and ranked papers with links.
+8. **Cache** — All papers and scores are saved to a local SQLite database. Subsequent runs with the same profile reuse previous scores, saving LLM costs. If you change your profile, everything is re-ranked from scratch.
 
 ## Output
 
-Reports are saved to `output/` with timestamped filenames:
+Reports are saved to `output/` with timestamped filenames that include the model used:
 
 ```
-output/digest_2026-03-07_1517.md
-output/digest_2026-03-07_1517.html
+output/digest_claude-sonnet-4_2026-03-07_1517.md
+output/digest_claude-sonnet-4_2026-03-07_1517.html
+output/digest_gpt-4o-mini_2026-03-07_1520.md
 ```
 
 Each report includes:

@@ -282,7 +282,7 @@ def _generate_reports(
     html_path = None
 
     if "markdown" in config.output.formats:
-        md_name = timestamped_filename("digest", "md")
+        md_name = timestamped_filename("digest", "md", model=config.llm.model)
         md_path = str(output_dir / md_name)
         md = generate_markdown_report(
             ranked_papers,
@@ -290,13 +290,14 @@ def _generate_reports(
             profile=config.profile,
             sources_config=config.sources,
             total_fetched=total_fetched,
+            model=config.llm.model,
         )
         with open(md_path, "w") as f:
             f.write(md)
         print(f"Markdown report: {md_path}")
 
     if "html" in config.output.formats:
-        html_name = timestamped_filename("digest", "html")
+        html_name = timestamped_filename("digest", "html", model=config.llm.model)
         html_path = str(output_dir / html_name)
         html = generate_html_report(
             ranked_papers,
@@ -304,6 +305,7 @@ def _generate_reports(
             profile=config.profile,
             sources_config=config.sources,
             total_fetched=total_fetched,
+            model=config.llm.model,
         )
         with open(html_path, "w") as f:
             f.write(html)

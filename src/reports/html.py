@@ -13,6 +13,7 @@ def generate_html_report(
     profile: UserProfile | None = None,
     sources_config: SourcesConfig | None = None,
     total_fetched: int = 0,
+    model: str = "",
     title: str = "Research Radar Digest",
 ) -> str:
     """Generate an HTML digest from ranked papers."""
@@ -108,9 +109,14 @@ def generate_html_report(
         </div>
         """
 
-    footer = ""
+    footer_parts = []
+    if model:
+        footer_parts.append(f"Model: {_escape(model)}")
     if token_usage:
-        footer = f'<p class="footer">{_escape(token_usage.report())}</p>'
+        footer_parts.append(_escape(token_usage.report()))
+    footer = ""
+    if footer_parts:
+        footer = f'<p class="footer">{" | ".join(footer_parts)}</p>'
 
     no_papers = ""
     if not ranked_papers:

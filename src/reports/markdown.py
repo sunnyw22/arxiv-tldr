@@ -58,6 +58,7 @@ def generate_markdown_report(
     profile: UserProfile | None = None,
     sources_config: SourcesConfig | None = None,
     total_fetched: int = 0,
+    model: str = "",
     title: str = "Research Radar Digest",
 ) -> str:
     """Generate a markdown digest from ranked papers."""
@@ -148,8 +149,13 @@ def generate_markdown_report(
         lines.append("")
 
     # Footer
+    footer_parts = []
+    if model:
+        footer_parts.append(f"Model: {model}")
     if token_usage:
-        lines.append(f"*{token_usage.report()}*")
+        footer_parts.append(token_usage.report())
+    if footer_parts:
+        lines.append(f"*{' | '.join(footer_parts)}*")
         lines.append("")
 
     return "\n".join(lines)
