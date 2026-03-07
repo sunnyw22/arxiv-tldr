@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
 
+from src.core.config import SourcesConfig
 from src.profiles.schema import UserProfile
 from src.ranking.rerank_llm import RankedPaper
+from src.reports.markdown import KNOWN_COLLABORATIONS, format_authors
 from src.summarization.llm_client import TokenUsage
 
 
@@ -9,53 +11,39 @@ def generate_html_report(
     ranked_papers: list[RankedPaper],
     token_usage: TokenUsage | None = None,
     profile: UserProfile | None = None,
+    sources_config: SourcesConfig | None = None,
+    total_fetched: int = 0,
     title: str = "Research Radar Digest",
 ) -> str:
-    """Generate an HTML digest from ranked papers.
-
-    Args:
-        ranked_papers: Papers with scores and summaries, sorted by relevance.
-        token_usage: Optional token usage stats to include in footer.
-        profile: Optional user profile to display search context.
-        title: Report title.
-
-    Returns:
-        HTML string.
-    """
+    """Generate an HTML digest from ranked papers."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
-    papers_html = ""
-    for i, rp in enumerate(ranked_papers, 1):
-        paper = rp.paper
-        author_str = ", ".join(paper.authors[:5])
-        if len(paper.authors) > 5:
-            author_str += f" et al. ({len(paper.authors)} authors)"
+    # Date range from papers
+    date_range = _get_date_range(ranked_papers)
 
-        score_color = _score_color(rp.relevance_score)
+    # Search summary table
+    summary_rows = ""
+    if date_range:
+        summary_rows += f"<tr><td>Paper date range</td><td>{_escape(date_range)}</td></tr>"
+    summary_rows += f"<tr><td>Total papers fetched</td><td>{total_fetched}</td></tr>"
+    summary_rows += f"<tr><td>Papers shown</td><td>{len(ranked_papers)}</td></tr>"
+    if sources_config:
+        if sources_config.arxiv.enabled and sources_config.arxiv.categories:
+            summary_rows += f"<tr><td>arXiv categories</td><td>{_escape(', '.join(sources_config.arxiv.categories))}</td></tr>"
+        if sources_config.inspire.enabled:
+            if sources_config.inspire.keywords:
+                summary_rows += f"<tr><td>INSPIRE keywords</td><td>{_escape(', '.join(sources_config.inspire.keywords))}</td></tr>"
+            if sources_config.inspire.subject_codes:
+                summary_rows += f"<tr><td>INSPIRE subjects</td><td>{_escape(', '.join(sources_config.inspire.subject_codes))}</td></tr>"
 
-        links = f'<a href="{paper.source_url}">Read paper</a>'
-        if paper.pdf_url:
-            links += f' | <a href="{paper.pdf_url}">PDF</a>'
-
-        papers_html += f"""
-        <div class="paper">
-            <h2>{i}. {_escape(paper.title)}</h2>
-            <div class="meta">
-                <span class="score" style="background-color: {score_color}">
-                    {rp.relevance_score}/10
-                </span>
-                <span class="categories">{_escape(', '.join(paper.categories[:5]))}</span>
-            </div>
-            <p class="authors">{_escape(author_str)}</p>
-            <p class="reasoning"><strong>Why this matters:</strong> {_escape(rp.reasoning)}</p>
-            <p class="summary"><strong>Summary:</strong> {_escape(rp.summary)}</p>
-            <p class="links">{links}</p>
-        </div>
-        """
-
-    footer = ""
-    if token_usage:
-        footer = f'<p class="footer">{_escape(token_usage.report())}</p>'
+    summary_html = f"""
+    <div class="section">
+        <h2>Search Summary</h2>
+        <table class="summary-table">
+            {summary_rows}
+        </table>
+    </div>
+    """
 
     # Search profile section
     profile_html = ""
@@ -90,6 +78,39 @@ def generate_html_report(
         </table>
     </div>
     """
+
+    # Paper cards
+    papers_html = ""
+    for i, rp in enumerate(ranked_papers, 1):
+        paper = rp.paper
+        author_str = _escape(format_authors(paper.authors))
+        pub_date = paper.submitted_date.strftime("%Y-%m-%d")
+        score_color = _score_color(rp.relevance_score)
+
+        links = f'<a href="{paper.source_url}">Read paper</a>'
+        if paper.pdf_url:
+            links += f' | <a href="{paper.pdf_url}">PDF</a>'
+
+        papers_html += f"""
+        <div class="paper">
+            <h2>{i}. {_escape(paper.title)}</h2>
+            <div class="meta">
+                <span class="score" style="background-color: {score_color}">
+                    {rp.relevance_score}/10
+                </span>
+                <span class="pub-date">Published: {pub_date}</span>
+                <span class="categories">{_escape(', '.join(paper.categories[:5]))}</span>
+            </div>
+            <p class="authors">{author_str}</p>
+            <p class="reasoning"><strong>Why this matters:</strong> {_escape(rp.reasoning)}</p>
+            <p class="summary"><strong>Summary:</strong> {_escape(rp.summary)}</p>
+            <p class="links">{links}</p>
+        </div>
+        """
+
+    footer = ""
+    if token_usage:
+        footer = f'<p class="footer">{_escape(token_usage.report())}</p>'
 
     no_papers = ""
     if not ranked_papers:
@@ -135,6 +156,7 @@ def generate_html_report(
             align-items: center;
             gap: 12px;
             margin-bottom: 10px;
+            flex-wrap: wrap;
         }}
         .score {{
             color: white;
@@ -142,6 +164,10 @@ def generate_html_report(
             border-radius: 12px;
             font-weight: bold;
             font-size: 0.9em;
+        }}
+        .pub-date {{
+            color: #555;
+            font-size: 0.85em;
         }}
         .categories {{
             color: #666;
@@ -182,6 +208,20 @@ def generate_html_report(
             margin-bottom: 4px;
             line-height: 1.5;
         }}
+        .summary-table {{
+            width: 100%;
+            border-collapse: collapse;
+        }}
+        .summary-table td {{
+            padding: 6px 12px;
+            border-bottom: 1px solid #eee;
+            font-size: 0.9em;
+        }}
+        .summary-table td:first-child {{
+            font-weight: bold;
+            width: 40%;
+            color: #555;
+        }}
         .rubric {{
             width: 100%;
             border-collapse: collapse;
@@ -207,7 +247,8 @@ def generate_html_report(
 </head>
 <body>
     <h1>{_escape(title)}</h1>
-    <p class="subtitle">Generated: {now} | Showing top {len(ranked_papers)} papers</p>
+    <p class="subtitle">Generated: {now}</p>
+    {summary_html}
     {profile_html}
     {rubric_html}
     {no_papers}
@@ -215,6 +256,18 @@ def generate_html_report(
     {footer}
 </body>
 </html>"""
+
+
+def _get_date_range(ranked_papers: list[RankedPaper]) -> str:
+    """Get the date range of papers in the results."""
+    if not ranked_papers:
+        return ""
+    dates = [rp.paper.submitted_date for rp in ranked_papers]
+    earliest = min(dates).strftime("%Y-%m-%d")
+    latest = max(dates).strftime("%Y-%m-%d")
+    if earliest == latest:
+        return earliest
+    return f"{earliest} to {latest}"
 
 
 def _score_color(score: int) -> str:

@@ -8,7 +8,7 @@ from src.sources.base import BaseSource
 
 # Fields to request from INSPIRE API to keep responses lean
 INSPIRE_FIELDS = (
-    "titles,abstracts,authors.full_name,arxiv_eprints,"
+    "titles,abstracts,authors.full_name,collaborations,arxiv_eprints,"
     "keywords,inspire_categories,earliest_date,dois,control_number"
 )
 
@@ -95,12 +95,21 @@ class InspireAPI(BaseSource):
         if not title:
             return None
 
-        # Authors
+        # Authors — INSPIRE stores collaborations separately from individual authors.
+        # Large collaboration papers (ATLAS, CMS, etc.) often have an empty authors
+        # list but a populated collaborations field.
         authors = [
             a["full_name"]
             for a in meta.get("authors", [])
             if a.get("full_name")
         ]
+        collaborations = [
+            c["value"]
+            for c in meta.get("collaborations", [])
+            if c.get("value")
+        ]
+        if not authors and collaborations:
+            authors = [f"{collaborations[0]} Collaboration"]
 
         # Abstract — may have multiple from different sources, prefer non-HTML
         abstracts = meta.get("abstracts", [])
