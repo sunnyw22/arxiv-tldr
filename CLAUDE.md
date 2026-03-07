@@ -65,6 +65,18 @@ At the end of a task, report:
 
 - NEVER commit API keys, secrets, or credentials into the repo. All secrets must go in `.env` (which is gitignored). Use environment variables or config references to access them at runtime.
 
+## Block workflow
+
+After each implementation block:
+1. **Review risks** — discuss what could trick us in the future before moving on
+2. **Document discussions** — capture design decisions, deferred ideas, and discussion outcomes into vault md files as we build
+3. **Commit** — commit all changes after discussion and before starting a new block
+
+## Coding principles
+
+- **Avoid hardcoding paths and values** — make things configurable (e.g., accept `--config` flag with a sensible default fallback)
+- **Keep things flexible** — prefer parameters over constants where the value might reasonably vary
+
 ## What to avoid
 
 - Skipping context gathering before implementation
@@ -75,3 +87,4 @@ At the end of a task, report:
 - Introducing unagreed complexity into the MVP
 - Hardcoding provider-specific behavior into shared modules
 - Bypassing normalized schema contracts
+- Hardcoding file paths — always allow configuration with sensible defaults
