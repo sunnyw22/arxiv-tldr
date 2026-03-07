@@ -2,3 +2,4 @@ litellm
 pyyaml
 feedparser
 requests
+python-dotenv

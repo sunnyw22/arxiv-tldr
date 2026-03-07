@@ -41,7 +41,7 @@ class OutputConfig:
 class LLMConfig:
     model: str = "anthropic/claude-sonnet-4-20250514"
     temperature: float = 0.3
-    max_tokens: int = 1024
+    max_tokens: int = 4096
 
 
 @dataclass
