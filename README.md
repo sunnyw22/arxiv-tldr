@@ -47,6 +47,7 @@ Each report includes:
 - **Scoring rubric** — what each score range means
 - **Ranked papers** — title, score, authors, publication date, "why this matters", summary, and links
 - **Cost report** — LLM token usage and estimated cost
+See `output_sample` for example.
 
 ## Usage
 
