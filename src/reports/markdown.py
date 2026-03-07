@@ -22,6 +22,14 @@ KNOWN_COLLABORATIONS = {
 }
 
 
+def _normalize_name(name: str) -> str:
+    """Convert 'Last, First' to 'First Last' for display."""
+    if ", " in name:
+        parts = name.split(", ", 1)
+        return f"{parts[1]} {parts[0]}"
+    return name
+
+
 def format_authors(authors: list[str]) -> str:
     """Format author list, detecting large collaborations."""
     if not authors:
@@ -34,12 +42,14 @@ def format_authors(authors: list[str]) -> str:
             for a in authors[:5]:
                 if collab.lower() in a.lower():
                     return f"{collab} Collaboration ({len(authors)} authors)"
-        return f"{authors[0]} et al. ({len(authors)} authors)"
+        return f"{_normalize_name(authors[0])} et al. ({len(authors)} authors)"
 
-    if len(authors) > 5:
-        return ", ".join(authors[:5]) + f" *et al.* ({len(authors)} authors)"
+    display = [_normalize_name(a) for a in authors]
 
-    return ", ".join(authors)
+    if len(display) > 5:
+        return ", ".join(display[:5]) + f" *et al.* ({len(authors)} authors)"
+
+    return ", ".join(display)
 
 
 def generate_markdown_report(
