@@ -2,12 +2,8 @@
 # Copy this file to config.yaml and customize for your research profile.
 
 # --- User Profile ---
+# Describes what you care about (generic, not tied to any specific source)
 profile:
-  # Broad research domains (used for category filtering)
-  research_domains:
-    - "cs.AI"
-    - "cs.LG"
-
   # Specific topic interests (used for relevance scoring)
   topic_interests:
     - "large language models"
@@ -31,6 +27,28 @@ profile:
 
   # Your expertise level: beginner, intermediate, advanced, expert
   expertise_level: "advanced"
+
+# --- Sources ---
+# Configures where to look for papers (source-specific settings)
+sources:
+  arxiv:
+    enabled: true
+    # arXiv categories to monitor
+    categories:
+      - "hep-ex"
+      - "hep-ph"
+      - "stat.ML"
+      - "cs.LG"
+
+  inspire:
+    enabled: true
+    # INSPIRE keyword searches
+    keywords:
+      - "tracking"
+      - "machine learning"
+    # INSPIRE subject categories (optional)
+    subject_codes:
+      - "Experiment-HEP"
 
 # --- Summary Preferences ---
 summary:
