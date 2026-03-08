@@ -84,9 +84,6 @@ def _rank_batch(
             for p in papers
         ]
 
-    # Also build a title-based lookup for fuzzy fallback
-    title_map = {p.title.lower().strip(): p for p in papers}
-
     results = []
     for idx, item in enumerate(data["papers"]):
         paper_id = item.get("paper_id", "")
@@ -110,7 +107,8 @@ def _rank_batch(
             takeaway_words = set(abstract_takeaway.lower().split())
             overlap = len(abstract_words & takeaway_words)
             if overlap < 5:
-                print(f"  [WARNING] abstract_takeaway for '{paper.title[:50]}' may be hallucinated (low overlap), clearing")
+                print(f"  [WARNING] abstract_takeaway for '{paper.title[:50]}' "
+                      "may be hallucinated (low overlap), clearing")
                 abstract_takeaway = ""
 
         results.append(RankedPaper(
