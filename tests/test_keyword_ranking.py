@@ -21,11 +21,9 @@ class TestScorePaper:
         result = score_paper(sample_paper_negative, sample_profile)
         assert result is None
 
-    def test_no_match_returns_zero(self, sample_paper_2, sample_profile):
+    def test_no_match_rejected(self, sample_paper_2, sample_profile):
         result = score_paper(sample_paper_2, sample_profile)
-        assert result is not None
-        assert result.score == 0.0
-        assert result.matched_interests == []
+        assert result is None
 
     def test_case_insensitive_matching(self, sample_profile):
         from tests.conftest import make_paper
@@ -35,8 +33,7 @@ class TestScorePaper:
         assert result is not None
         assert "machine learning" in result.matched_interests
 
-    def test_empty_profile_returns_zero(self, sample_paper):
+    def test_empty_profile_rejected(self, sample_paper):
         empty_profile = UserProfile()
         result = score_paper(sample_paper, empty_profile)
-        assert result is not None
-        assert result.score == 0.0
+        assert result is None

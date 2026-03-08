@@ -42,6 +42,10 @@ def score_paper(paper: Paper, profile: UserProfile) -> ScoredPaper | None:
             score += 0.5
             matched_signals.append(signal)
 
+    # Reject papers with no keyword matches at all
+    if score == 0.0:
+        return None
+
     return ScoredPaper(
         paper=paper,
         score=score,

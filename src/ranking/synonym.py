@@ -22,10 +22,10 @@ def expand_keywords(profile: UserProfile, llm_config: LLMConfig) -> list[str]:
     try:
         data = json.loads(response)
         terms = data.get("expanded_terms", [])
-        # Deduplicate while preserving order
+        # Always include original interests first (LLM may rephrase or drop them)
         seen = set()
         unique = []
-        for t in terms:
+        for t in list(profile.topic_interests) + terms:
             lower = t.lower()
             if lower not in seen:
                 seen.add(lower)
