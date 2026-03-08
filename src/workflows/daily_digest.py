@@ -7,6 +7,7 @@ generates reports, and persists results to SQLite.
 import hashlib
 import json
 import os
+import re
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -177,29 +178,110 @@ def _fetch_papers(config: AppConfig) -> list[Paper]:
     return papers
 
 
+def _normalize_title(title: str) -> str:
+    """Normalize a title for fuzzy dedup: lowercase, strip, collapse spaces."""
+    return re.sub(r"\s+", " ", title.lower().strip())
+
+
+def _first_author_last_name(authors: list[str]) -> str:
+    """Extract the last name of the first author.
+
+    Handles both "Last, First" and "First Last" formats.
+    Returns lowercased last name for comparison.
+    """
+    if not authors:
+        return ""
+    first_author = authors[0].strip()
+    if "," in first_author:
+        # "Last, First" format
+        return first_author.split(",")[0].strip().lower()
+    # "First Last" format
+    parts = first_author.split()
+    return parts[-1].strip().lower() if parts else ""
+
+
 def _dedup_papers(papers: list[Paper]) -> list[Paper]:
     """Deduplicate papers across sources.
 
-    Uses tiered matching: arXiv ID (version stripped) > source_id.
+    Uses tiered matching (cheap to expensive):
+      1. arXiv ID (version-stripped)
+      2. DOI (exact match)
+      3. source_id (exact match)
+      4. Normalized title + first author last name + year
+    First occurrence wins when duplicates are found.
+
+    Note: Tier 4 could theoretically false-positive if two genuinely different
+    papers share the same title, first-author last name, and year (e.g. generic
+    titles like "Review of Particle Physics" by common last names). No real case
+    found in practice. If reported, add second-author or abstract similarity check.
     """
-    seen: set[str] = set()
+    seen_arxiv: set[str] = set()
+    seen_doi: set[str] = set()
+    seen_source: set[str] = set()
+    seen_title_author_year: set[str] = set()
     unique: list[Paper] = []
 
     for p in papers:
-        # Normalize arXiv IDs by stripping version suffix
+        # --- Tier 1: arXiv ID (version-stripped) ---
+        arxiv_id = None
         if p.source_type in ("arxiv", "arxiv_rss", "arxiv_api"):
-            key = p.source_id.split("v")[0]
+            arxiv_id = p.source_id.split("v")[0]
         elif p.raw_metadata.get("arxiv_id"):
-            # INSPIRE paper with arXiv cross-ref
-            key = p.raw_metadata["arxiv_id"].split("v")[0]
-        else:
-            key = p.source_id
+            arxiv_id = p.raw_metadata["arxiv_id"].split("v")[0]
 
-        if key not in seen:
-            seen.add(key)
+        if arxiv_id:
+            if arxiv_id in seen_arxiv:
+                continue
+            seen_arxiv.add(arxiv_id)
+            # Also register DOI/source_id/title so later papers can't bypass
+            doi = p.raw_metadata.get("doi", "").strip().lower()
+            if doi:
+                seen_doi.add(doi)
+            seen_source.add(p.source_id)
+            tay = _title_author_year_key(p)
+            if tay:
+                seen_title_author_year.add(tay)
             unique.append(p)
+            continue
+
+        # --- Tier 2: DOI (exact match) ---
+        doi = p.raw_metadata.get("doi", "").strip().lower()
+        if doi:
+            if doi in seen_doi:
+                continue
+            seen_doi.add(doi)
+            seen_source.add(p.source_id)
+            tay = _title_author_year_key(p)
+            if tay:
+                seen_title_author_year.add(tay)
+            unique.append(p)
+            continue
+
+        # --- Tier 3: source_id (exact match) ---
+        if p.source_id in seen_source:
+            continue
+        seen_source.add(p.source_id)
+
+        # --- Tier 4: Normalized title + first author last name + year ---
+        tay = _title_author_year_key(p)
+        if tay:
+            if tay in seen_title_author_year:
+                continue
+            seen_title_author_year.add(tay)
+
+        unique.append(p)
 
     return unique
+
+
+def _title_author_year_key(paper: Paper) -> str | None:
+    """Build a title+author+year dedup key, or None if insufficient data."""
+    title = _normalize_title(paper.title)
+    last_name = _first_author_last_name(paper.authors)
+    if not title or not last_name:
+        return None
+    year = str(paper.submitted_date.year)
+    return f"{title}|{last_name}|{year}"
 
 
 def _load_previous_scores(

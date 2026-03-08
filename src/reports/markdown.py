@@ -132,13 +132,30 @@ def generate_markdown_report(
         lines.append(f"**Authors:** {format_authors(paper.authors)}")
         lines.append("")
 
-        # Why relevant
-        lines.append(f"**Why this matters:** {rp.reasoning}")
-        lines.append("")
+        # Abstract (collapsible)
+        if paper.abstract:
+            lines.append("<details>")
+            lines.append("<summary>Abstract</summary>")
+            lines.append("")
+            lines.append(paper.abstract)
+            lines.append("")
+            lines.append("</details>")
+            lines.append("")
 
-        # Summary
-        lines.append(f"**Summary:** {rp.summary}")
-        lines.append("")
+        # Trust-structured sections
+        if rp.abstract_takeaway:
+            lines.append(f"**From the paper:** {rp.abstract_takeaway}")
+            lines.append("")
+        if rp.why_relevant:
+            lines.append(f"**Our assessment:** {rp.why_relevant}")
+            lines.append("")
+
+        # Fallback: show old-style summary/reasoning if new fields are empty
+        if not rp.abstract_takeaway and not rp.why_relevant:
+            lines.append(f"**Why this matters:** {rp.reasoning}")
+            lines.append("")
+            lines.append(f"**Summary:** {rp.summary}")
+            lines.append("")
 
         # Links
         lines.append(f"[Read paper]({paper.source_url})")

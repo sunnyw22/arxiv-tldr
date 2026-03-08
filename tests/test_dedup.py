@@ -1,11 +1,19 @@
 """Tests for deduplication, profile hash, and score reuse logic."""
 
+from datetime import datetime, timezone
+
 import pytest
 
 from src.profiles.schema import UserProfile
 from src.ranking.rerank_llm import RankedPaper
 from src.storage.sqlite import get_connection, save_papers, save_run
-from src.workflows.daily_digest import _dedup_papers, _load_previous_scores, profile_hash
+from src.workflows.daily_digest import (
+    _dedup_papers,
+    _first_author_last_name,
+    _load_previous_scores,
+    _normalize_title,
+    profile_hash,
+)
 from tests.conftest import make_paper
 
 
@@ -43,9 +51,9 @@ class TestDedupPapers:
 
     def test_different_papers_preserved(self):
         papers = [
-            make_paper("2603.01111v1", source_type="arxiv_api"),
-            make_paper("2603.02222v1", source_type="arxiv_api"),
-            make_paper("inspire-999", source_type="inspire"),
+            make_paper("2603.01111v1", title="Paper A", source_type="arxiv_api"),
+            make_paper("2603.02222v1", title="Paper B", source_type="arxiv_api"),
+            make_paper("inspire-999", title="Paper C", source_type="inspire"),
         ]
         result = _dedup_papers(papers)
         assert len(result) == 3
@@ -61,6 +69,180 @@ class TestDedupPapers:
         ]
         result = _dedup_papers(papers)
         assert len(result) == 1
+
+    def test_doi_dedup_same_doi(self):
+        """Two papers from different sources with the same DOI should dedup."""
+        p1 = make_paper(
+            "inspire-100",
+            source_type="inspire",
+            raw_metadata={"doi": "10.1234/test.2026.001"},
+        )
+        p2 = make_paper(
+            "inspire-200",
+            source_type="inspire",
+            raw_metadata={"doi": "10.1234/test.2026.001"},
+        )
+        result = _dedup_papers([p1, p2])
+        assert len(result) == 1
+        assert result[0].source_id == "inspire-100"  # first wins
+
+    def test_doi_dedup_case_insensitive(self):
+        """DOI matching should be case-insensitive."""
+        p1 = make_paper(
+            "inspire-100",
+            source_type="inspire",
+            raw_metadata={"doi": "10.1234/Test.2026.001"},
+        )
+        p2 = make_paper(
+            "inspire-200",
+            source_type="inspire",
+            raw_metadata={"doi": "10.1234/test.2026.001"},
+        )
+        result = _dedup_papers([p1, p2])
+        assert len(result) == 1
+
+    def test_doi_dedup_across_arxiv_and_inspire(self):
+        """arXiv paper with DOI should dedup against INSPIRE paper with same DOI."""
+        arxiv_paper = make_paper(
+            "2603.01234v1",
+            source_type="arxiv_api",
+            raw_metadata={"doi": "10.1234/test.2026.001"},
+        )
+        inspire_paper = make_paper(
+            "inspire-100",
+            source_type="inspire",
+            raw_metadata={"doi": "10.1234/test.2026.001"},
+        )
+        result = _dedup_papers([arxiv_paper, inspire_paper])
+        assert len(result) == 1
+        assert result[0].source_id == "2603.01234v1"
+
+    def test_doi_different_values_not_deduped(self):
+        """Papers with different DOIs should not be deduped."""
+        p1 = make_paper(
+            "inspire-100",
+            source_type="inspire",
+            raw_metadata={"doi": "10.1234/aaa"},
+        )
+        p2 = make_paper(
+            "inspire-200",
+            source_type="inspire",
+            raw_metadata={"doi": "10.1234/bbb"},
+        )
+        result = _dedup_papers([p1, p2])
+        assert len(result) == 2
+
+    def test_title_author_year_dedup(self):
+        """Papers with same normalized title, first author last name, and year should dedup."""
+        p1 = make_paper(
+            "inspire-100",
+            title="Some Great Paper on Physics",
+            source_type="inspire",
+            authors=["Smith, John", "Doe, Jane"],
+            submitted_date=datetime(2026, 3, 7, tzinfo=timezone.utc),
+        )
+        p2 = make_paper(
+            "other-200",
+            title="Some  Great  Paper  on  Physics",  # extra spaces
+            source_type="inspire",
+            authors=["Smith, John", "Other, Bob"],
+            submitted_date=datetime(2026, 5, 1, tzinfo=timezone.utc),
+        )
+        result = _dedup_papers([p1, p2])
+        assert len(result) == 1
+        assert result[0].source_id == "inspire-100"
+
+    def test_title_author_year_different_author_no_dedup(self):
+        """Different first author last name should not dedup."""
+        p1 = make_paper(
+            "inspire-100",
+            title="Same Title",
+            source_type="inspire",
+            authors=["Smith, John"],
+            submitted_date=datetime(2026, 3, 7, tzinfo=timezone.utc),
+        )
+        p2 = make_paper(
+            "inspire-200",
+            title="Same Title",
+            source_type="inspire",
+            authors=["Jones, Jane"],
+            submitted_date=datetime(2026, 3, 7, tzinfo=timezone.utc),
+        )
+        result = _dedup_papers([p1, p2])
+        assert len(result) == 2
+
+    def test_title_author_year_different_year_no_dedup(self):
+        """Same title and author but different year should not dedup."""
+        p1 = make_paper(
+            "inspire-100",
+            title="Same Title",
+            source_type="inspire",
+            authors=["Smith, John"],
+            submitted_date=datetime(2025, 3, 7, tzinfo=timezone.utc),
+        )
+        p2 = make_paper(
+            "inspire-200",
+            title="Same Title",
+            source_type="inspire",
+            authors=["Smith, John"],
+            submitted_date=datetime(2026, 3, 7, tzinfo=timezone.utc),
+        )
+        result = _dedup_papers([p1, p2])
+        assert len(result) == 2
+
+    def test_title_author_year_first_last_format(self):
+        """Handle 'First Last' author format for dedup."""
+        p1 = make_paper(
+            "inspire-100",
+            title="Same Title",
+            source_type="inspire",
+            authors=["John Smith"],
+            submitted_date=datetime(2026, 3, 7, tzinfo=timezone.utc),
+        )
+        p2 = make_paper(
+            "inspire-200",
+            title="Same Title",
+            source_type="inspire",
+            authors=["Smith, John"],
+            submitted_date=datetime(2026, 3, 7, tzinfo=timezone.utc),
+        )
+        result = _dedup_papers([p1, p2])
+        assert len(result) == 1
+
+    def test_arxiv_id_takes_priority_over_title_match(self):
+        """arXiv ID match should prevent title+author+year from being checked."""
+        p1 = make_paper(
+            "2603.01234v1",
+            title="Paper Title",
+            source_type="arxiv_api",
+            authors=["Smith, John"],
+        )
+        p2 = make_paper(
+            "2603.01234v2",
+            title="Paper Title (Updated)",  # different title
+            source_type="arxiv_api",
+            authors=["Smith, John"],
+        )
+        result = _dedup_papers([p1, p2])
+        assert len(result) == 1  # deduped by arXiv ID, not title
+
+
+class TestNormalization:
+    def test_normalize_title(self):
+        assert _normalize_title("  Some   Title  ") == "some title"
+        assert _normalize_title("ALL CAPS") == "all caps"
+        assert _normalize_title("  multiple   spaces   here  ") == "multiple spaces here"
+
+    def test_first_author_last_name_comma_format(self):
+        assert _first_author_last_name(["Smith, John"]) == "smith"
+        assert _first_author_last_name(["Doe, Jane", "Other, Bob"]) == "doe"
+
+    def test_first_author_last_name_space_format(self):
+        assert _first_author_last_name(["John Smith"]) == "smith"
+        assert _first_author_last_name(["Jane Marie Doe"]) == "doe"
+
+    def test_first_author_last_name_empty(self):
+        assert _first_author_last_name([]) == ""
 
 
 class TestProfileHash:

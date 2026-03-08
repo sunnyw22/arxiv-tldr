@@ -2,6 +2,7 @@
 
 
 from src.core.config import ArxivSourceConfig, InspireSourceConfig, SourcesConfig
+from src.ranking.rerank_llm import RankedPaper
 from src.reports import timestamped_filename
 from src.reports.html import _escape, _score_color, generate_html_report
 from src.reports.markdown import (
@@ -107,6 +108,36 @@ class TestMarkdownReport:
         assert "arxiv.org/abs/2603.01234v1" in md
         assert "arxiv.org/pdf/2603.01234v1" in md
 
+    def test_abstract_in_collapsible(self, sample_ranked_paper):
+        md = generate_markdown_report([sample_ranked_paper])
+        assert "<details>" in md
+        assert "<summary>Abstract</summary>" in md
+        assert "graph neural networks" in md.lower()
+
+    def test_trust_sections_with_new_fields(self, sample_paper):
+        rp = RankedPaper(
+            paper=sample_paper,
+            relevance_score=8,
+            reasoning="Good match",
+            summary="Summary text",
+            abstract_takeaway="Uses GNNs for tracking.",
+            why_relevant="Directly applicable to your ATLAS project.",
+        )
+        md = generate_markdown_report([rp])
+        assert "**From the paper:**" in md
+        assert "Uses GNNs for tracking." in md
+        assert "**Our assessment:**" in md
+        assert "Directly applicable to your ATLAS project." in md
+        # Old-style fields should NOT appear when new fields are present
+        assert "**Why this matters:**" not in md
+        assert "**Summary:**" not in md
+
+    def test_backwards_compat_old_fields(self, sample_ranked_paper):
+        """When new fields are empty, fall back to old-style display."""
+        md = generate_markdown_report([sample_ranked_paper])
+        assert "**Why this matters:**" in md
+        assert "**Summary:**" in md
+
 
 class TestHtmlReport:
     def test_basic_html(self, sample_ranked_paper, sample_profile):
@@ -132,6 +163,34 @@ class TestHtmlReport:
     def test_html_escaping(self):
         assert _escape("<script>alert('xss')</script>") == "&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;" or \
                "&lt;script&gt;" in _escape("<script>alert('xss')</script>")
+
+    def test_abstract_in_html(self, sample_ranked_paper):
+        html = generate_html_report([sample_ranked_paper])
+        assert '<details class="abstract">' in html
+        assert "<summary>Abstract</summary>" in html
+        assert "graph neural networks" in html.lower()
+
+    def test_trust_sections_html(self, sample_paper):
+        rp = RankedPaper(
+            paper=sample_paper,
+            relevance_score=8,
+            reasoning="Good match",
+            summary="Summary text",
+            abstract_takeaway="Uses GNNs for tracking.",
+            why_relevant="Directly applicable to your ATLAS project.",
+        )
+        html = generate_html_report([rp])
+        assert "from-paper" in html
+        assert "our-assessment" in html
+        assert "From the paper:" in html
+        assert "Our assessment:" in html
+        assert "Uses GNNs for tracking." in html
+
+    def test_backwards_compat_html(self, sample_ranked_paper):
+        """Old entries without new fields fall back to old-style display."""
+        html = generate_html_report([sample_ranked_paper])
+        assert "Why this matters:" in html
+        assert "Summary:" in html
 
 
 class TestTimestampedFilename:

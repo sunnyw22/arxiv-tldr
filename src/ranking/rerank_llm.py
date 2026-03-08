@@ -16,6 +16,8 @@ class RankedPaper:
     relevance_score: int
     reasoning: str
     summary: str
+    abstract_takeaway: str = ""
+    why_relevant: str = ""
 
 
 def rerank_and_summarize(
@@ -97,5 +99,7 @@ def _rank_batch(
             relevance_score=int(item.get("relevance_score", 0)),
             reasoning=item.get("reasoning", "No reasoning provided"),
             summary=item.get("summary", "No summary provided"),
+            abstract_takeaway=item.get("abstract_takeaway", ""),
+            why_relevant=item.get("why_relevant", ""),
         ))
     return results

@@ -68,9 +68,11 @@ Score based on how useful this paper would be to THIS SPECIFIC researcher given 
 For each paper, provide:
 1. **relevance_score**: integer 1-10 using the rubric above
 2. **reasoning**: one sentence explaining why this score, referencing the researcher's specific interests or project context
-3. **summary**: 2-3 sentence summary tailored to the researcher's expertise level ({level})
+3. **abstract_takeaway**: 1-2 sentence factual summary grounded strictly in the abstract — what the paper does or finds. Do not add interpretation.
+4. **why_relevant**: 1-2 sentence explanation of why this paper matters to THIS researcher, given their project context. This is your interpretation.
+5. **summary**: 2-3 sentence summary tailored to the researcher's expertise level ({level})
 
-Return a JSON object with a single key "papers" containing a list of objects, one per paper, in the same order as provided. Each object must have keys: "paper_id", "relevance_score", "reasoning", "summary".
+Return a JSON object with a single key "papers" containing a list of objects, one per paper, in the same order as provided. Each object must have keys: "paper_id", "relevance_score", "reasoning", "abstract_takeaway", "why_relevant", "summary".
 
 Example format:
-{{"papers": [{{"paper_id": "2603.01234v1", "relevance_score": 8, "reasoning": "Directly addresses...", "summary": "This paper proposes..."}}]}}"""
+{{"papers": [{{"paper_id": "2603.01234v1", "relevance_score": 8, "reasoning": "Directly addresses...", "abstract_takeaway": "This paper presents a method for...", "why_relevant": "This could improve your...", "summary": "This paper proposes..."}}]}}"""

@@ -92,6 +92,36 @@ def generate_html_report(
         if paper.pdf_url:
             links += f' | <a href="{paper.pdf_url}">PDF</a>'
 
+        # Abstract dropdown
+        abstract_html = ""
+        if paper.abstract:
+            abstract_html = f"""
+            <details class="abstract">
+                <summary>Abstract</summary>
+                <p>{_escape(paper.abstract)}</p>
+            </details>"""
+
+        # Trust-structured sections
+        trust_html = ""
+        if rp.abstract_takeaway or rp.why_relevant:
+            if rp.abstract_takeaway:
+                trust_html += f"""
+            <div class="trust-section from-paper">
+                <span class="trust-label">From the paper:</span>
+                <p>{_escape(rp.abstract_takeaway)}</p>
+            </div>"""
+            if rp.why_relevant:
+                trust_html += f"""
+            <div class="trust-section our-assessment">
+                <span class="trust-label">Our assessment:</span>
+                <p>{_escape(rp.why_relevant)}</p>
+            </div>"""
+        else:
+            # Fallback for old entries without new fields
+            trust_html = f"""
+            <p class="reasoning"><strong>Why this matters:</strong> {_escape(rp.reasoning)}</p>
+            <p class="summary"><strong>Summary:</strong> {_escape(rp.summary)}</p>"""
+
         papers_html += f"""
         <div class="paper">
             <h2>{i}. {_escape(paper.title)}</h2>
@@ -102,9 +132,7 @@ def generate_html_report(
                 <span class="pub-date">Published: {pub_date}</span>
                 <span class="categories">{_escape(', '.join(paper.categories[:5]))}</span>
             </div>
-            <p class="authors">{author_str}</p>
-            <p class="reasoning"><strong>Why this matters:</strong> {_escape(rp.reasoning)}</p>
-            <p class="summary"><strong>Summary:</strong> {_escape(rp.summary)}</p>
+            <p class="authors">{author_str}</p>{abstract_html}{trust_html}
             <p class="links">{links}</p>
         </div>
         """
@@ -186,6 +214,55 @@ def generate_html_report(
         }}
         .reasoning, .summary {{
             line-height: 1.6;
+        }}
+        .abstract {{
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 10px 14px;
+            margin: 10px 0;
+            font-size: 0.9em;
+        }}
+        .abstract summary {{
+            cursor: pointer;
+            font-weight: bold;
+            color: #555;
+            font-size: 0.95em;
+        }}
+        .abstract p {{
+            margin-top: 8px;
+            line-height: 1.5;
+            color: #444;
+        }}
+        .trust-section {{
+            border-left: 3px solid #ddd;
+            padding: 8px 14px;
+            margin: 10px 0;
+            border-radius: 0 6px 6px 0;
+        }}
+        .trust-section .trust-label {{
+            font-weight: bold;
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+        .trust-section p {{
+            margin: 4px 0 0 0;
+            line-height: 1.6;
+        }}
+        .from-paper {{
+            background: #f0f7f0;
+            border-left-color: #2d8a4e;
+        }}
+        .from-paper .trust-label {{
+            color: #2d8a4e;
+        }}
+        .our-assessment {{
+            background: #f0f4f8;
+            border-left-color: #0066cc;
+        }}
+        .our-assessment .trust-label {{
+            color: #0066cc;
         }}
         .links a {{
             color: #0066cc;

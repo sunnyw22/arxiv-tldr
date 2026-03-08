@@ -91,6 +91,8 @@ def _make_llm_ranking_response(paper_ids: list[str], scores: list[int] | None = 
                 "paper_id": pid,
                 "relevance_score": score,
                 "reasoning": f"Relevant to researcher's interests (score {score})",
+                "abstract_takeaway": f"Key finding for paper {pid}.",
+                "why_relevant": f"This matters because it relates to your project (score {score}).",
                 "summary": f"Summary for paper {pid}",
             }
             for pid, score in zip(paper_ids, scores)

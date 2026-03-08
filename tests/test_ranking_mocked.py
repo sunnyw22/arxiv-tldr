@@ -51,8 +51,20 @@ class TestRerankAndSummarize:
         papers = [make_paper("id-1", "Relevant Paper"), make_paper("id-2", "Less Relevant")]
         mock_llm.return_value = json.dumps({
             "papers": [
-                {"paper_id": "id-1", "relevance_score": 8, "reasoning": "Great match", "summary": "Summary 1"},
-                {"paper_id": "id-2", "relevance_score": 3, "reasoning": "Poor match", "summary": "Summary 2"},
+                {
+                    "paper_id": "id-1", "relevance_score": 8,
+                    "reasoning": "Great match",
+                    "abstract_takeaway": "Presents a new ML method.",
+                    "why_relevant": "Directly useful for your project.",
+                    "summary": "Summary 1",
+                },
+                {
+                    "paper_id": "id-2", "relevance_score": 3,
+                    "reasoning": "Poor match",
+                    "abstract_takeaway": "Studies quantum effects.",
+                    "why_relevant": "Limited overlap with your work.",
+                    "summary": "Summary 2",
+                },
             ]
         })
         profile = UserProfile(topic_interests=["ML"])
@@ -60,6 +72,21 @@ class TestRerankAndSummarize:
         assert len(result) == 2
         assert result[0].relevance_score == 8
         assert result[1].relevance_score == 3
+        assert result[0].abstract_takeaway == "Presents a new ML method."
+        assert result[0].why_relevant == "Directly useful for your project."
+
+    @patch("src.ranking.rerank_llm.call_llm")
+    def test_new_fields_default_empty(self, mock_llm):
+        """When LLM response omits new fields, they default to empty strings."""
+        papers = [make_paper("id-1", "Paper")]
+        mock_llm.return_value = json.dumps({
+            "papers": [
+                {"paper_id": "id-1", "relevance_score": 7, "reasoning": "Good", "summary": "S"},
+            ]
+        })
+        result = rerank_and_summarize(papers, UserProfile(), LLMConfig(), top_n=10)
+        assert result[0].abstract_takeaway == ""
+        assert result[0].why_relevant == ""
 
     @patch("src.ranking.rerank_llm.call_llm")
     def test_top_n_cutoff(self, mock_llm):

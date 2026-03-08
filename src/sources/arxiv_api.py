@@ -116,6 +116,15 @@ class ArxivAPI(BaseSource):
         # Comment
         comment = entry.findtext(f"{{{ARXIV_NS}}}comment", "")
 
+        # DOI (optional — not all papers have one)
+        doi = entry.findtext(f"{{{ARXIV_NS}}}doi", "").strip()
+
+        raw_metadata: dict = {}
+        if comment:
+            raw_metadata["comment"] = comment
+        if doi:
+            raw_metadata["doi"] = doi
+
         return Paper(
             source_id=arxiv_id,
             title=title,
@@ -128,7 +137,7 @@ class ArxivAPI(BaseSource):
             pdf_url=pdf_url,
             source_type="arxiv_api",
             updated_date=updated_date,
-            raw_metadata={"comment": comment} if comment else {},
+            raw_metadata=raw_metadata,
         )
 
     def _extract_arxiv_id(self, id_text: str) -> str | None:

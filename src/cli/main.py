@@ -2,8 +2,10 @@
 
 import argparse
 import sys
+from pathlib import Path
 
 from src.core.config import load_config
+from src.core.config_validator import validate_config
 from src.workflows.daily_digest import run_daily_digest
 
 DEFAULT_CONFIG = "config/config.yaml"
@@ -31,6 +33,12 @@ def main():
         default=DEFAULT_DB,
         help=f"Path to SQLite database (default: {DEFAULT_DB})",
     )
+    digest_parser.add_argument(
+        "--skip-validation",
+        action="store_true",
+        default=False,
+        help="Skip LLM-based config validation pre-flight check",
+    )
 
     args = parser.parse_args()
 
@@ -43,12 +51,29 @@ def main():
 
 
 def _run_digest(args):
+    config_path = Path(args.config)
+
     try:
-        config = load_config(args.config)
+        config = load_config(config_path)
     except FileNotFoundError:
         print(f"Config file not found: {args.config}")
         print(f"Copy config/config.example.yaml to {args.config} and customize it.")
         sys.exit(1)
+
+    if not args.skip_validation:
+        raw_yaml = config_path.read_text()
+        warnings = validate_config(raw_yaml, config.llm)
+
+        if warnings:
+            print("\n--- Config Validation Warnings ---")
+            for i, warning in enumerate(warnings, 1):
+                print(f"  {i}. {warning}")
+            print("----------------------------------\n")
+
+            answer = input("Proceed anyway? [y/N] ").strip().lower()
+            if answer != "y":
+                print("Aborted. Please fix your config and try again.")
+                sys.exit(1)
 
     result = run_daily_digest(config, db_path=args.db)
 
