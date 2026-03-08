@@ -71,7 +71,7 @@ output:
 # --- LLM Provider ---
 llm:
   # Provider and model (via litellm format)
-  model: "anthropic/claude-sonnet-4-20250514"
+  model: "openai/gpt-4o-mini"
 
   # Temperature for summarization
   temperature: 0.3

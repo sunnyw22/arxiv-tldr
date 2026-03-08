@@ -37,6 +37,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Set up config
+        run: |
+          cp config/config.example.yaml config/config.yaml
+          mkdir -p output
+
       - name: Run daily digest
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
