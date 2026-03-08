@@ -16,7 +16,7 @@ from src.core.models import Paper
 from src.profiles.schema import UserProfile
 from src.ranking.keyword import score_paper
 from src.ranking.rerank_llm import RankedPaper, rerank_and_summarize
-from src.ranking.synonym import expand_keywords
+from src.ranking.synonym import expand_keywords, expand_keywords_interactive
 from src.reports import timestamped_filename
 from src.reports.html import generate_html_report
 from src.reports.markdown import generate_markdown_report
@@ -49,6 +49,7 @@ def run_daily_digest(
     db_path: str | Path = "data/research_radar.db",
     since_date: datetime | None = None,
     until_date: datetime | None = None,
+    interactive: bool = False,
 ) -> dict:
     """Run the full daily digest pipeline.
 
@@ -135,7 +136,7 @@ def run_daily_digest(
     keyword_rejected = 0
     if needs_scoring:
         newly_ranked, expanded_keywords, keyword_passed, keyword_rejected = _rank_papers(
-            needs_scoring, config
+            needs_scoring, config, interactive=interactive
         )
         print(f"LLM ranked {len(newly_ranked)} new papers")
 
@@ -399,7 +400,9 @@ def _load_previous_scores(
 
 
 def _rank_papers(
-    papers: list[Paper], config: AppConfig
+    papers: list[Paper],
+    config: AppConfig,
+    interactive: bool = False,
 ) -> tuple[list[RankedPaper], list[str], int, int]:
     """Expand keywords, pre-sort, and LLM rank.
 
@@ -407,7 +410,10 @@ def _rank_papers(
         Tuple of (ranked_papers, expanded_keywords, keyword_passed, keyword_rejected).
     """
     print("Expanding keywords...")
-    expanded = expand_keywords(config.profile, config.llm)
+    if interactive:
+        expanded = expand_keywords_interactive(config.profile, config.llm)
+    else:
+        expanded = expand_keywords(config.profile, config.llm)
     print(f"  Expanded to {len(expanded)} terms")
 
     # Pre-sort with expanded keywords

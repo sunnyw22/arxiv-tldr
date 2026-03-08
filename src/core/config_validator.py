@@ -25,6 +25,7 @@ sources:
 summary:
   style: str  # one of: concise, detailed, technical
   max_papers: int  # positive integer
+  min_score: int  # minimum relevance score to include (1-10, default 4)
 output:
   formats: list[str]  # subset of: markdown, html
   output_dir: str

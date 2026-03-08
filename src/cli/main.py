@@ -5,6 +5,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from src.cli.wizard import run_wizard
 from src.core.config import load_config
 from src.core.config_validator import validate_config
 from src.workflows.daily_digest import run_daily_digest
@@ -50,6 +51,27 @@ def main():
         default=None,
         help="Only include papers submitted on or before this date (YYYY-MM-DD)",
     )
+    digest_parser.add_argument(
+        "--no-interactive",
+        action="store_true",
+        default=False,
+        help="Skip interactive prompts (keyword review, etc). Use for CI/headless runs.",
+    )
+
+    # --- setup command ---
+    setup_parser = subparsers.add_parser(
+        "setup", help="Interactive wizard to generate a config file"
+    )
+    setup_parser.add_argument(
+        "--config", "-c",
+        default=DEFAULT_CONFIG,
+        help=f"Output path for generated config (default: {DEFAULT_CONFIG})",
+    )
+    setup_parser.add_argument(
+        "--model",
+        default="openai/gpt-4o-mini",
+        help="LLM model to use for config generation (default: openai/gpt-4o-mini)",
+    )
 
     args = parser.parse_args()
 
@@ -59,6 +81,8 @@ def main():
 
     if args.command == "digest":
         _run_digest(args)
+    elif args.command == "setup":
+        run_wizard(output_path=args.config, model=args.model)
 
 
 def _parse_date(date_str: str, label: str) -> datetime:
@@ -100,11 +124,13 @@ def _run_digest(args):
     since_date = _parse_date(args.since, "since") if args.since else None
     until_date = _parse_date(args.until, "until") if args.until else None
 
+    interactive = not args.no_interactive
     result = run_daily_digest(
         config,
         db_path=args.db,
         since_date=since_date,
         until_date=until_date,
+        interactive=interactive,
     )
 
     if not result["ranked_papers"]:
