@@ -25,6 +25,7 @@ class InspireAPI(BaseSource):
         search_query: str | None = None,
         max_results: int = 50,
         page: int = 1,
+        days_back: int = 30,
     ) -> list[Paper]:
         """Fetch papers from INSPIRE-HEP.
 
@@ -37,8 +38,9 @@ class InspireAPI(BaseSource):
                           Overrides keywords/subject_codes if provided.
             max_results: Number of results per page.
             page: Page number (1-indexed).
+            days_back: Only return papers from the last N days (default 30).
         """
-        query = search_query or self._build_query(keywords, subject_codes)
+        query = search_query or self._build_query(keywords, subject_codes, days_back)
         if not query:
             return []
 
@@ -65,6 +67,7 @@ class InspireAPI(BaseSource):
         self,
         keywords: list[str] | None,
         subject_codes: list[str] | None,
+        days_back: int = 30,
     ) -> str:
         """Build INSPIRE SPIRES-style search query.
 
@@ -80,6 +83,13 @@ class InspireAPI(BaseSource):
                 conditions.append(f"subject {sc}")
         if not conditions:
             return ""
+
+        # Restrict to recent papers to avoid surfacing very old results
+        if days_back > 0:
+            from datetime import datetime, timedelta, timezone
+            since = (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime("%Y-%m-%d")
+            conditions.append(f"de >= {since}")
+
         return "find " + " and ".join(conditions)
 
     def _parse_hit(self, hit: dict) -> Paper | None:

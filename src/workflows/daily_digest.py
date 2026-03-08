@@ -148,7 +148,10 @@ def run_daily_digest(
     all_ranked = previous_ranked + newly_ranked
     all_ranked.sort(key=lambda r: r.relevance_score, reverse=True)
 
-    # Apply top_n with tie-inclusive cutoff
+    # Apply minimum score floor, then top_n with tie-inclusive cutoff
+    min_score = config.summary.min_score
+    all_ranked = [r for r in all_ranked if r.relevance_score >= min_score]
+
     top_n = config.summary.max_papers
     if len(all_ranked) > top_n:
         cutoff_score = all_ranked[top_n - 1].relevance_score

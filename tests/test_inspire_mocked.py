@@ -197,18 +197,26 @@ class TestInspireAPI:
 
     def test_build_query_keywords_and_subjects(self):
         api = InspireAPI()
-        query = api._build_query(["tracking", "ML"], ["Experiment-HEP"])
+        query = api._build_query(["tracking", "ML"], ["Experiment-HEP"], days_back=0)
         assert query == "find k tracking and k ML and subject Experiment-HEP"
 
     def test_build_query_keywords_only(self):
         api = InspireAPI()
-        query = api._build_query(["tracking"], None)
+        query = api._build_query(["tracking"], None, days_back=0)
         assert query == "find k tracking"
 
     def test_build_query_empty(self):
         api = InspireAPI()
         query = api._build_query(None, None)
         assert query == ""
+
+    def test_build_query_includes_date_filter(self):
+        api = InspireAPI()
+        query = api._build_query(["tracking"], None, days_back=30)
+        assert query.startswith("find k tracking and de >= ")
+        # Verify date format YYYY-MM-DD
+        import re
+        assert re.search(r"de >= \d{4}-\d{2}-\d{2}$", query)
 
     def test_fetch_no_query_returns_empty(self):
         api = InspireAPI()

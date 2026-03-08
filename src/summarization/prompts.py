@@ -22,7 +22,7 @@ A researcher has asked you to help them find papers. Based on their profile, sug
 **Quality rules:**
 - ALWAYS include the original topic interests exactly as written — do not rephrase or merge them.
 - Add synonyms, abbreviations, and closely related concepts as SHORT terms (1-3 words) that would appear in paper titles or abstracts. Examples: "GNN", "graph neural network", "track fitting", "Kalman filter".
-- Do NOT generate long phrases like "machine learning for particle tracking" — these are too specific to match. Instead, add the individual concepts: "machine learning", "particle tracking".
+- Do NOT generate long phrases like "machine learning for medical imaging" — these are too specific to match. Instead, add the individual concepts: "machine learning", "medical imaging".
 - Stay tightly within the researcher's domain. Do NOT expand into adjacent fields unless the researcher's context explicitly bridges them.
 - Do NOT pad the list with generic terms (e.g., "supervised learning", "data augmentation") unless directly relevant to the project context.
 
@@ -64,11 +64,11 @@ Categories: {", ".join(p.categories)}
 - **9-10**: Paper's PRIMARY contribution is one of the researcher's listed methods applied to their exact problem domain. Reserve for true must-reads. Most batches will have 0-1 papers at this level.
 - **7-8**: Same subfield with directly transferable methods or results. The researcher could cite or build on this work.
 - **4-6**: Related field or tangentially useful technique. Interesting but not actionable for their current project.
-- **1-3**: Different field, different methods, or only superficial keyword overlap. Being in the same broad discipline (e.g., both "particle physics") is NOT enough for a high score.
+- **1-3**: Different field, different methods, or only superficial keyword overlap. Being in the same broad discipline is NOT enough for a high score.
 
 **Anti-inflation rules:**
-- A paper about particle physics is NOT automatically relevant to a particle tracking researcher. The methods and application must match.
-- Sharing a category (e.g., hep-ex) does not mean relevance. Score based on methodological and topical overlap with the researcher's PROJECT CONTEXT.
+- Sharing a broad topic area is NOT automatic relevance. The methods and application must actually match the researcher's work.
+- Sharing a category or venue does not mean relevance. Score based on methodological and topical overlap with the researcher's PROJECT CONTEXT.
 - When in doubt, score lower. A 5 is not a bad score — it means "might be interesting".
 
 For each paper, provide:

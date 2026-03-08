@@ -31,6 +31,7 @@ class SourcesConfig:
 class SummaryConfig:
     style: str = "concise"
     max_papers: int = 15
+    min_score: int = 4
 
 
 @dataclass
@@ -106,6 +107,7 @@ def _parse_config(raw: dict) -> AppConfig:
     summary = SummaryConfig(
         style=summary_raw.get("style", "concise"),
         max_papers=summary_raw.get("max_papers", 15),
+        min_score=summary_raw.get("min_score", 4),
     )
 
     output_raw = raw.get("output", {})

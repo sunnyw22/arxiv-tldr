@@ -84,22 +84,41 @@ def _rank_batch(
             for p in papers
         ]
 
+    # Also build a title-based lookup for fuzzy fallback
+    title_map = {p.title.lower().strip(): p for p in papers}
+
     results = []
     for idx, item in enumerate(data["papers"]):
         paper_id = item.get("paper_id", "")
         paper = paper_map.get(paper_id)
-        if paper is None and idx < len(papers):
-            # Fallback: match by position if ID doesn't match
-            paper = papers[idx]
+
+        if paper is None:
+            # Fallback: match by position, but only if ordering looks consistent
+            if idx < len(papers):
+                paper = papers[idx]
+                print(f"  [WARNING] LLM returned unrecognized paper_id '{paper_id}', "
+                      f"falling back to positional match (paper {idx + 1}: {paper.title[:60]})")
+
         if paper is None:
             continue
+
+        # Discard abstract_takeaway if it appears to describe a different paper
+        abstract_takeaway = item.get("abstract_takeaway", "")
+        if abstract_takeaway and paper.abstract and len(paper.abstract.split()) > 20:
+            # Check if the takeaway mentions key terms from the actual abstract
+            abstract_words = set(paper.abstract.lower().split())
+            takeaway_words = set(abstract_takeaway.lower().split())
+            overlap = len(abstract_words & takeaway_words)
+            if overlap < 5:
+                print(f"  [WARNING] abstract_takeaway for '{paper.title[:50]}' may be hallucinated (low overlap), clearing")
+                abstract_takeaway = ""
 
         results.append(RankedPaper(
             paper=paper,
             relevance_score=int(item.get("relevance_score", 0)),
             reasoning=item.get("reasoning", "No reasoning provided"),
             summary=item.get("summary", "No summary provided"),
-            abstract_takeaway=item.get("abstract_takeaway", ""),
+            abstract_takeaway=abstract_takeaway,
             why_relevant=item.get("why_relevant", ""),
         ))
     return results
