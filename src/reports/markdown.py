@@ -1,9 +1,9 @@
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from src.core.config import SourcesConfig
 from src.profiles.schema import UserProfile
 from src.ranking.rerank_llm import RankedPaper
+from src.reports import short_model_name
 from src.summarization.llm_client import TokenUsage
 
 SCORING_RUBRIC = """| Score | Meaning |
@@ -52,6 +52,15 @@ def format_authors(authors: list[str]) -> str:
     return ", ".join(display)
 
 
+def _source_label(source_type: str) -> str:
+    """Return a human-readable source label for a paper."""
+    if source_type in ("arxiv_api", "arxiv_rss", "arxiv"):
+        return "arXiv"
+    if source_type == "inspire":
+        return "INSPIRE"
+    return source_type
+
+
 def generate_markdown_report(
     ranked_papers: list[RankedPaper],
     token_usage: TokenUsage | None = None,
@@ -60,9 +69,15 @@ def generate_markdown_report(
     total_fetched: int = 0,
     model: str = "",
     title: str = "Research Radar Digest",
+    expanded_keywords: list[str] | None = None,
+    pipeline_stats: dict | None = None,
 ) -> str:
     """Generate a markdown digest from ranked papers."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    if expanded_keywords is None:
+        expanded_keywords = []
+    if pipeline_stats is None:
+        pipeline_stats = {}
 
     # Date range from papers
     date_range = _get_date_range(ranked_papers)
@@ -72,6 +87,12 @@ def generate_markdown_report(
         f"*Generated: {now}*",
         "",
     ]
+
+    # Digest window
+    digest_window = pipeline_stats.get("digest_window", "")
+    if digest_window:
+        lines.append(f"> {digest_window}")
+        lines.append("")
 
     # Search summary table
     lines.append("## Search Summary")
@@ -92,16 +113,55 @@ def generate_markdown_report(
                 lines.append(f"| INSPIRE subjects | {', '.join(sources_config.inspire.subject_codes)} |")
     lines.append("")
 
-    # Search profile
+    # User profile summary table
     if profile:
-        lines.append("## Search Profile")
+        lines.append("## User Profile")
         lines.append("")
+        lines.append("| Field | Values |")
+        lines.append("|-------|--------|")
         if profile.topic_interests:
-            lines.append(f"**Topic interests:** {', '.join(profile.topic_interests)}")
+            lines.append(f"| Topic interests | {', '.join(profile.topic_interests)} |")
+        if profile.required_signals:
+            lines.append(f"| Required signals | {', '.join(profile.required_signals)} |")
+        if profile.negative_filters:
+            lines.append(f"| Negative filters | {', '.join(profile.negative_filters)} |")
         if profile.project_context:
-            lines.append(f"**Research context:** {profile.project_context}")
+            lines.append(f"| Project context | {profile.project_context} |")
         if profile.expertise_level:
-            lines.append(f"**Expertise level:** {profile.expertise_level}")
+            lines.append(f"| Expertise level | {profile.expertise_level} |")
+        lines.append("")
+
+    # Synonym expansion table
+    if expanded_keywords and profile and profile.topic_interests:
+        lines.append("## Keyword Expansion")
+        lines.append("")
+        original = ", ".join(profile.topic_interests)
+        expanded_str = ", ".join(expanded_keywords)
+        lines.append(f"**Original interests:** [{original}]")
+        lines.append(f"**Expanded to:** [{expanded_str}]")
+        lines.append("")
+
+    # Pipeline stats summary
+    if pipeline_stats:
+        lines.append("## Pipeline Stats")
+        lines.append("")
+        arxiv_count = pipeline_stats.get("arxiv_fetched", 0)
+        inspire_count = pipeline_stats.get("inspire_fetched", 0)
+        if arxiv_count or inspire_count:
+            lines.append(f"- **Sources:** {arxiv_count} from arXiv, {inspire_count} from INSPIRE")
+        unique = pipeline_stats.get("unique_papers")
+        if unique is not None:
+            lines.append(f"- **After dedup:** {unique} unique papers")
+        kw_passed = pipeline_stats.get("keyword_passed")
+        kw_rejected = pipeline_stats.get("keyword_rejected")
+        if kw_passed is not None and kw_rejected is not None:
+            lines.append(f"- **Keyword filter:** {kw_passed} passed, {kw_rejected} rejected")
+        llm_scored = pipeline_stats.get("llm_scored")
+        if llm_scored is not None:
+            lines.append(f"- **LLM scored:** {llm_scored} papers")
+        final_count = pipeline_stats.get("final_count")
+        if final_count is not None:
+            lines.append(f"- **Final digest:** {final_count} papers")
         lines.append("")
 
     # Scoring rubric
@@ -120,11 +180,13 @@ def generate_markdown_report(
     for i, rp in enumerate(ranked_papers, 1):
         paper = rp.paper
         pub_date = paper.submitted_date.strftime("%Y-%m-%d")
+        source_tag = _source_label(paper.source_type)
 
         lines.append(f"## {i}. {paper.title}")
         lines.append("")
         lines.append(f"**Relevance: {rp.relevance_score}/10** | "
                       f"Published: {pub_date} | "
+                      f"Source: {source_tag} | "
                       f"Categories: {', '.join(paper.categories[:5])}")
         lines.append("")
 
@@ -143,11 +205,12 @@ def generate_markdown_report(
             lines.append("")
 
         # Trust-structured sections
+        model_label = short_model_name(model)
         if rp.abstract_takeaway:
             lines.append(f"**From the paper:** {rp.abstract_takeaway}")
             lines.append("")
         if rp.why_relevant:
-            lines.append(f"**Our assessment:** {rp.why_relevant}")
+            lines.append(f"**{model_label} - Assessment:** {rp.why_relevant}")
             lines.append("")
 
         # Fallback: show old-style summary/reasoning if new fields are empty

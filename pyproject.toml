@@ -8,3 +8,7 @@ line-length = 120
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+# LLM prompt templates have long lines by nature
+"src/summarization/prompts.py" = ["E501"]

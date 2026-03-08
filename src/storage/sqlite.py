@@ -55,16 +55,36 @@ def _init_tables(conn: sqlite3.Connection) -> None:
         );
 
         CREATE TABLE IF NOT EXISTS run_papers (
-            run_id          INTEGER NOT NULL,
-            source_id       TEXT NOT NULL,
-            relevance_score INTEGER NOT NULL,
-            reasoning       TEXT NOT NULL,
-            summary         TEXT NOT NULL,
+            run_id            INTEGER NOT NULL,
+            source_id         TEXT NOT NULL,
+            relevance_score   INTEGER NOT NULL,
+            reasoning         TEXT NOT NULL,
+            summary           TEXT NOT NULL,
+            abstract_takeaway TEXT NOT NULL DEFAULT '',
+            why_relevant      TEXT NOT NULL DEFAULT '',
             PRIMARY KEY (run_id, source_id),
             FOREIGN KEY (run_id) REFERENCES runs(run_id),
             FOREIGN KEY (source_id) REFERENCES papers(source_id)
         );
+
+        CREATE TABLE IF NOT EXISTS source_checkpoints (
+            source_name     TEXT PRIMARY KEY,
+            last_fetched    TEXT NOT NULL,       -- ISO 8601 timestamp
+            papers_fetched  INTEGER NOT NULL DEFAULT 0
+        );
     """)
+    # Migrate existing DBs: add new columns if missing
+    _migrate_run_papers(conn)
+
+
+def _migrate_run_papers(conn: sqlite3.Connection) -> None:
+    """Add abstract_takeaway and why_relevant columns to run_papers if missing."""
+    cursor = conn.execute("PRAGMA table_info(run_papers)")
+    columns = {row[1] for row in cursor.fetchall()}
+    if "abstract_takeaway" not in columns:
+        conn.execute("ALTER TABLE run_papers ADD COLUMN abstract_takeaway TEXT NOT NULL DEFAULT ''")
+    if "why_relevant" not in columns:
+        conn.execute("ALTER TABLE run_papers ADD COLUMN why_relevant TEXT NOT NULL DEFAULT ''")
 
 
 # --- Paper operations ---
@@ -176,9 +196,11 @@ def save_run(
     for rp in ranked_papers:
         conn.execute(
             """INSERT OR REPLACE INTO run_papers
-               (run_id, source_id, relevance_score, reasoning, summary)
-               VALUES (?, ?, ?, ?, ?)""",
-            (run_id, rp.paper.source_id, rp.relevance_score, rp.reasoning, rp.summary),
+               (run_id, source_id, relevance_score, reasoning, summary,
+                abstract_takeaway, why_relevant)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (run_id, rp.paper.source_id, rp.relevance_score, rp.reasoning, rp.summary,
+             rp.abstract_takeaway, rp.why_relevant),
         )
 
     conn.commit()
@@ -213,11 +235,42 @@ def get_run_papers(conn: sqlite3.Connection, run_id: int) -> list[RankedPaper]:
             relevance_score=row["relevance_score"],
             reasoning=row["reasoning"],
             summary=row["summary"],
+            abstract_takeaway=row["abstract_takeaway"] if "abstract_takeaway" in row.keys() else "",
+            why_relevant=row["why_relevant"] if "why_relevant" in row.keys() else "",
         ))
     return results
 
 
 # --- Helpers ---
+
+def save_source_checkpoint(
+    conn: sqlite3.Connection,
+    source_name: str,
+    timestamp: datetime,
+    count: int,
+) -> None:
+    """Save or update a source checkpoint (last fetch time and count)."""
+    conn.execute(
+        """INSERT INTO source_checkpoints (source_name, last_fetched, papers_fetched)
+           VALUES (?, ?, ?)
+           ON CONFLICT(source_name) DO UPDATE SET
+               last_fetched = excluded.last_fetched,
+               papers_fetched = excluded.papers_fetched""",
+        (source_name, timestamp.isoformat(), count),
+    )
+    conn.commit()
+
+
+def get_source_checkpoint(conn: sqlite3.Connection, source_name: str) -> datetime | None:
+    """Get the last fetch timestamp for a source, or None if never fetched."""
+    row = conn.execute(
+        "SELECT last_fetched FROM source_checkpoints WHERE source_name = ?",
+        (source_name,),
+    ).fetchone()
+    if not row:
+        return None
+    return datetime.fromisoformat(row["last_fetched"])
+
 
 def _row_to_paper(row: sqlite3.Row) -> Paper:
     """Convert a database row to a Paper object."""

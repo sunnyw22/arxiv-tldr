@@ -126,7 +126,7 @@ class TestMarkdownReport:
         md = generate_markdown_report([rp])
         assert "**From the paper:**" in md
         assert "Uses GNNs for tracking." in md
-        assert "**Our assessment:**" in md
+        assert "- Assessment:**" in md
         assert "Directly applicable to your ATLAS project." in md
         # Old-style fields should NOT appear when new fields are present
         assert "**Why this matters:**" not in md
@@ -183,7 +183,7 @@ class TestHtmlReport:
         assert "from-paper" in html
         assert "our-assessment" in html
         assert "From the paper:" in html
-        assert "Our assessment:" in html
+        assert "- Assessment:" in html
         assert "Uses GNNs for tracking." in html
 
     def test_backwards_compat_html(self, sample_ranked_paper):

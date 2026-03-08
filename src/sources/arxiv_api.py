@@ -101,7 +101,10 @@ class ArxivAPI(BaseSource):
         ]
 
         primary_el = entry.find(f"{{{ARXIV_NS}}}primary_category")
-        primary_category = primary_el.get("term", "") if primary_el is not None else (categories[0] if categories else "")
+        if primary_el is not None:
+            primary_category = primary_el.get("term", "")
+        else:
+            primary_category = categories[0] if categories else ""
 
         published = entry.findtext(f"{{{ATOM_NS}}}published", "")
         updated = entry.findtext(f"{{{ATOM_NS}}}updated", "")

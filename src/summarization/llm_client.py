@@ -1,8 +1,8 @@
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-from dotenv import load_dotenv
 import litellm
+from dotenv import load_dotenv
 
 from src.core.config import LLMConfig
 

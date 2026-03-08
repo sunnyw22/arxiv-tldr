@@ -1,0 +1,59 @@
+name: Daily Radar
+
+on:
+  schedule:
+    # Run Mon-Fri at 02:00 UTC (~1-2 hours after arXiv announcements at ~00:00 UTC)
+    # arXiv announces Sun-Thu evenings at 20:00 ET (00:00-01:00 UTC next day).
+    # Monday's run catches Sunday evening's announcement (Thu-Fri submissions + weekend backlog).
+    # Monday also naturally picks up weekend INSPIRE papers via "most recent N" fetch.
+    - cron: "0 2 * * 1-5"
+  workflow_dispatch:
+    # Manual trigger for testing — can run anytime
+    inputs:
+      since:
+        description: "Only include papers from this date (YYYY-MM-DD, optional)"
+        required: false
+        default: ""
+      until:
+        description: "Only include papers until this date (YYYY-MM-DD, optional)"
+        required: false
+        default: ""
+
+jobs:
+  radar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run daily digest
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          ARGS="digest --skip-validation"
+          if [ -n "${{ github.event.inputs.since }}" ]; then
+            ARGS="$ARGS --since ${{ github.event.inputs.since }}"
+          fi
+          if [ -n "${{ github.event.inputs.until }}" ]; then
+            ARGS="$ARGS --until ${{ github.event.inputs.until }}"
+          fi
+          python -m src.cli.main $ARGS
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: radar-digest-${{ github.run_number }}
+          path: output/
+          retention-days: 30

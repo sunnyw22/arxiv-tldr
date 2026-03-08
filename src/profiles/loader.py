@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from src.core.config import AppConfig, load_config
+from src.core.config import load_config
 from src.profiles.schema import UserProfile
 
 

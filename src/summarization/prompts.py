@@ -68,8 +68,8 @@ Score based on how useful this paper would be to THIS SPECIFIC researcher given 
 For each paper, provide:
 1. **relevance_score**: integer 1-10 using the rubric above
 2. **reasoning**: one sentence explaining why this score, referencing the researcher's specific interests or project context
-3. **abstract_takeaway**: 1-2 sentence factual summary grounded strictly in the abstract — what the paper does or finds. Do not add interpretation.
-4. **why_relevant**: 1-2 sentence explanation of why this paper matters to THIS researcher, given their project context. This is your interpretation.
+3. **abstract_takeaway**: 2-4 sentence factual summary grounded strictly in the abstract. Cover: (a) what problem the paper addresses, (b) what technique or method is applied, and (c) what the key results or findings are. Do not add interpretation — only report what the abstract states.
+4. **why_relevant**: 2-4 sentence explanation of why this paper matters to THIS researcher. Explain: (a) which of the researcher's topic interests it connects to and how, (b) how it relates to or could benefit their specific project context. Be concrete — do not just say "this aligns with the researcher's interests".
 5. **summary**: 2-3 sentence summary tailored to the researcher's expertise level ({level})
 
 Return a JSON object with a single key "papers" containing a list of objects, one per paper, in the same order as provided. Each object must have keys: "paper_id", "relevance_score", "reasoning", "abstract_takeaway", "why_relevant", "summary".

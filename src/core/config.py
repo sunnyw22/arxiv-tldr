@@ -10,6 +10,7 @@ from src.profiles.schema import UserProfile
 class ArxivSourceConfig:
     enabled: bool = True
     categories: list[str] = field(default_factory=list)
+    max_results: int = 50
 
 
 @dataclass
@@ -17,6 +18,7 @@ class InspireSourceConfig:
     enabled: bool = True
     keywords: list[str] = field(default_factory=list)
     subject_codes: list[str] = field(default_factory=list)
+    max_results: int = 50
 
 
 @dataclass
@@ -39,7 +41,7 @@ class OutputConfig:
 
 @dataclass
 class LLMConfig:
-    model: str = "anthropic/claude-sonnet-4-20250514"
+    model: str = "openai/gpt-4o-mini"
     temperature: float = 0.3
     max_tokens: int = 4096
 
@@ -90,11 +92,13 @@ def _parse_config(raw: dict) -> AppConfig:
         arxiv=ArxivSourceConfig(
             enabled=arxiv_raw.get("enabled", True),
             categories=arxiv_raw.get("categories", []),
+            max_results=arxiv_raw.get("max_results", 50),
         ),
         inspire=InspireSourceConfig(
             enabled=inspire_raw.get("enabled", True),
             keywords=inspire_raw.get("keywords", []),
             subject_codes=inspire_raw.get("subject_codes", []),
+            max_results=inspire_raw.get("max_results", 50),
         ),
     )
 
@@ -112,7 +116,7 @@ def _parse_config(raw: dict) -> AppConfig:
 
     llm_raw = raw.get("llm", {})
     llm = LLMConfig(
-        model=llm_raw.get("model", "anthropic/claude-sonnet-4-20250514"),
+        model=llm_raw.get("model", "openai/gpt-4o-mini"),
         temperature=llm_raw.get("temperature", 0.3),
         max_tokens=llm_raw.get("max_tokens", 1024),
     )

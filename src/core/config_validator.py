@@ -16,10 +16,12 @@ sources:
   arxiv:
     enabled: bool
     categories: list[str]  # arXiv category codes like hep-ex, cs.LG
+    max_results: int  # positive integer, default 50
   inspire:
     enabled: bool
     keywords: list[str]
     subject_codes: list[str]
+    max_results: int  # positive integer, default 50
 summary:
   style: str  # one of: concise, detailed, technical
   max_papers: int  # positive integer

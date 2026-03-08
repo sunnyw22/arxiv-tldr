@@ -2,6 +2,7 @@
 
 import argparse
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from src.core.config import load_config
@@ -39,6 +40,16 @@ def main():
         default=False,
         help="Skip LLM-based config validation pre-flight check",
     )
+    digest_parser.add_argument(
+        "--since",
+        default=None,
+        help="Only include papers submitted on or after this date (YYYY-MM-DD)",
+    )
+    digest_parser.add_argument(
+        "--until",
+        default=None,
+        help="Only include papers submitted on or before this date (YYYY-MM-DD)",
+    )
 
     args = parser.parse_args()
 
@@ -48,6 +59,16 @@ def main():
 
     if args.command == "digest":
         _run_digest(args)
+
+
+def _parse_date(date_str: str, label: str) -> datetime:
+    """Parse a YYYY-MM-DD date string into a timezone-aware datetime."""
+    try:
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        return dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        print(f"Invalid date format for --{label}: '{date_str}'. Expected YYYY-MM-DD.")
+        sys.exit(1)
 
 
 def _run_digest(args):
@@ -75,7 +96,16 @@ def _run_digest(args):
                 print("Aborted. Please fix your config and try again.")
                 sys.exit(1)
 
-    result = run_daily_digest(config, db_path=args.db)
+    # Parse date window flags
+    since_date = _parse_date(args.since, "since") if args.since else None
+    until_date = _parse_date(args.until, "until") if args.until else None
+
+    result = run_daily_digest(
+        config,
+        db_path=args.db,
+        since_date=since_date,
+        until_date=until_date,
+    )
 
     if not result["ranked_papers"]:
         print("\nNo relevant papers found for your profile.")

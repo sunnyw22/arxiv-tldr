@@ -3,8 +3,27 @@ from datetime import datetime, timezone
 from src.core.config import SourcesConfig
 from src.profiles.schema import UserProfile
 from src.ranking.rerank_llm import RankedPaper
-from src.reports.markdown import KNOWN_COLLABORATIONS, format_authors
+from src.reports import short_model_name
+from src.reports.markdown import format_authors
 from src.summarization.llm_client import TokenUsage
+
+
+def _source_label(source_type: str) -> str:
+    """Return a human-readable source label for a paper."""
+    if source_type in ("arxiv_api", "arxiv_rss", "arxiv"):
+        return "arXiv"
+    if source_type == "inspire":
+        return "INSPIRE"
+    return source_type
+
+
+def _source_badge_color(source_type: str) -> str:
+    """Return a badge color for the source type."""
+    if source_type in ("arxiv_api", "arxiv_rss", "arxiv"):
+        return "#b31b1b"  # arXiv red
+    if source_type == "inspire":
+        return "#1a5276"  # INSPIRE blue
+    return "#666"
 
 
 def generate_html_report(
@@ -15,12 +34,24 @@ def generate_html_report(
     total_fetched: int = 0,
     model: str = "",
     title: str = "Research Radar Digest",
+    expanded_keywords: list[str] | None = None,
+    pipeline_stats: dict | None = None,
 ) -> str:
     """Generate an HTML digest from ranked papers."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    if expanded_keywords is None:
+        expanded_keywords = []
+    if pipeline_stats is None:
+        pipeline_stats = {}
 
     # Date range from papers
     date_range = _get_date_range(ranked_papers)
+
+    # Digest window
+    digest_window = pipeline_stats.get("digest_window", "")
+    digest_window_html = ""
+    if digest_window:
+        digest_window_html = f'<p class="digest-window">{_escape(digest_window)}</p>'
 
     # Search summary table
     summary_rows = ""
@@ -30,12 +61,15 @@ def generate_html_report(
     summary_rows += f"<tr><td>Papers shown</td><td>{len(ranked_papers)}</td></tr>"
     if sources_config:
         if sources_config.arxiv.enabled and sources_config.arxiv.categories:
-            summary_rows += f"<tr><td>arXiv categories</td><td>{_escape(', '.join(sources_config.arxiv.categories))}</td></tr>"
+            cats = _escape(", ".join(sources_config.arxiv.categories))
+            summary_rows += f"<tr><td>arXiv categories</td><td>{cats}</td></tr>"
         if sources_config.inspire.enabled:
             if sources_config.inspire.keywords:
-                summary_rows += f"<tr><td>INSPIRE keywords</td><td>{_escape(', '.join(sources_config.inspire.keywords))}</td></tr>"
+                kws = _escape(", ".join(sources_config.inspire.keywords))
+                summary_rows += f"<tr><td>INSPIRE keywords</td><td>{kws}</td></tr>"
             if sources_config.inspire.subject_codes:
-                summary_rows += f"<tr><td>INSPIRE subjects</td><td>{_escape(', '.join(sources_config.inspire.subject_codes))}</td></tr>"
+                scs = _escape(", ".join(sources_config.inspire.subject_codes))
+                summary_rows += f"<tr><td>INSPIRE subjects</td><td>{scs}</td></tr>"
 
     summary_html = f"""
     <div class="section">
@@ -46,22 +80,70 @@ def generate_html_report(
     </div>
     """
 
-    # Search profile section
+    # User profile table
     profile_html = ""
     if profile:
-        profile_items = ""
+        profile_rows = ""
         if profile.topic_interests:
-            profile_items += f"<li><strong>Topic interests:</strong> {_escape(', '.join(profile.topic_interests))}</li>"
+            profile_rows += f"<tr><td>Topic interests</td><td>{_escape(', '.join(profile.topic_interests))}</td></tr>"
+        if profile.required_signals:
+            profile_rows += f"<tr><td>Required signals</td><td>{_escape(', '.join(profile.required_signals))}</td></tr>"
+        if profile.negative_filters:
+            profile_rows += f"<tr><td>Negative filters</td><td>{_escape(', '.join(profile.negative_filters))}</td></tr>"
         if profile.project_context:
-            profile_items += f"<li><strong>Research context:</strong> {_escape(profile.project_context)}</li>"
+            profile_rows += f"<tr><td>Project context</td><td>{_escape(profile.project_context)}</td></tr>"
         if profile.expertise_level:
-            profile_items += f"<li><strong>Expertise level:</strong> {_escape(profile.expertise_level)}</li>"
+            profile_rows += f"<tr><td>Expertise level</td><td>{_escape(profile.expertise_level)}</td></tr>"
         profile_html = f"""
         <div class="section">
-            <h2>Search Profile</h2>
-            <ul>{profile_items}</ul>
+            <h2>User Profile</h2>
+            <table class="summary-table">
+                {profile_rows}
+            </table>
         </div>
         """
+
+    # Synonym expansion section
+    synonym_html = ""
+    if expanded_keywords and profile and profile.topic_interests:
+        original = _escape(", ".join(profile.topic_interests))
+        expanded_str = _escape(", ".join(expanded_keywords))
+        synonym_html = f"""
+        <div class="section">
+            <h2>Keyword Expansion</h2>
+            <p><strong>Original interests:</strong> [{original}]</p>
+            <p><strong>Expanded to:</strong> [{expanded_str}]</p>
+        </div>
+        """
+
+    # Pipeline stats section
+    stats_html = ""
+    if pipeline_stats:
+        stats_items = ""
+        arxiv_count = pipeline_stats.get("arxiv_fetched", 0)
+        inspire_count = pipeline_stats.get("inspire_fetched", 0)
+        if arxiv_count or inspire_count:
+            stats_items += f"<li><strong>Sources:</strong> {arxiv_count} from arXiv, {inspire_count} from INSPIRE</li>"
+        unique = pipeline_stats.get("unique_papers")
+        if unique is not None:
+            stats_items += f"<li><strong>After dedup:</strong> {unique} unique papers</li>"
+        kw_passed = pipeline_stats.get("keyword_passed")
+        kw_rejected = pipeline_stats.get("keyword_rejected")
+        if kw_passed is not None and kw_rejected is not None:
+            stats_items += f"<li><strong>Keyword filter:</strong> {kw_passed} passed, {kw_rejected} rejected</li>"
+        llm_scored = pipeline_stats.get("llm_scored")
+        if llm_scored is not None:
+            stats_items += f"<li><strong>LLM scored:</strong> {llm_scored} papers</li>"
+        final_count = pipeline_stats.get("final_count")
+        if final_count is not None:
+            stats_items += f"<li><strong>Final digest:</strong> {final_count} papers</li>"
+        if stats_items:
+            stats_html = f"""
+            <div class="section">
+                <h2>Pipeline Stats</h2>
+                <ul>{stats_items}</ul>
+            </div>
+            """
 
     # Scoring rubric
     rubric_html = """
@@ -87,6 +169,8 @@ def generate_html_report(
         author_str = _escape(format_authors(paper.authors))
         pub_date = paper.submitted_date.strftime("%Y-%m-%d")
         score_color = _score_color(rp.relevance_score)
+        source_tag = _source_label(paper.source_type)
+        badge_color = _source_badge_color(paper.source_type)
 
         links = f'<a href="{paper.source_url}">Read paper</a>'
         if paper.pdf_url:
@@ -102,6 +186,7 @@ def generate_html_report(
             </details>"""
 
         # Trust-structured sections
+        model_label = short_model_name(model)
         trust_html = ""
         if rp.abstract_takeaway or rp.why_relevant:
             if rp.abstract_takeaway:
@@ -113,7 +198,7 @@ def generate_html_report(
             if rp.why_relevant:
                 trust_html += f"""
             <div class="trust-section our-assessment">
-                <span class="trust-label">Our assessment:</span>
+                <span class="trust-label">{_escape(model_label)} - Assessment:</span>
                 <p>{_escape(rp.why_relevant)}</p>
             </div>"""
         else:
@@ -128,6 +213,9 @@ def generate_html_report(
             <div class="meta">
                 <span class="score" style="background-color: {score_color}">
                     {rp.relevance_score}/10
+                </span>
+                <span class="source-badge" style="background-color: {badge_color}">
+                    {source_tag}
                 </span>
                 <span class="pub-date">Published: {pub_date}</span>
                 <span class="categories">{_escape(', '.join(paper.categories[:5]))}</span>
@@ -174,6 +262,14 @@ def generate_html_report(
             font-size: 0.9em;
             margin-bottom: 20px;
         }}
+        .digest-window {{
+            background: #e8f4fd;
+            border-left: 3px solid #0066cc;
+            padding: 8px 14px;
+            margin-bottom: 16px;
+            font-size: 0.9em;
+            color: #333;
+        }}
         .paper {{
             background: white;
             border: 1px solid #ddd;
@@ -198,6 +294,15 @@ def generate_html_report(
             border-radius: 12px;
             font-weight: bold;
             font-size: 0.9em;
+        }}
+        .source-badge {{
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75em;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }}
         .pub-date {{
             color: #555;
@@ -331,8 +436,11 @@ def generate_html_report(
 <body>
     <h1>{_escape(title)}</h1>
     <p class="subtitle">Generated: {now}</p>
+    {digest_window_html}
     {summary_html}
     {profile_html}
+    {synonym_html}
+    {stats_html}
     {rubric_html}
     {no_papers}
     {papers_html}
