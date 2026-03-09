@@ -256,10 +256,11 @@ class TestProfileHash:
         p2 = UserProfile(topic_interests=["NLP"])
         assert profile_hash(p1) != profile_hash(p2)
 
-    def test_different_context_different_hash(self):
+    def test_context_excluded_from_hash(self):
+        """project_context is excluded so context_file changes don't bust cache."""
         p1 = UserProfile(project_context="Project A")
         p2 = UserProfile(project_context="Project B")
-        assert profile_hash(p1) != profile_hash(p2)
+        assert profile_hash(p1) == profile_hash(p2)
 
     def test_different_expertise_different_hash(self):
         p1 = UserProfile(expertise_level="beginner")

@@ -68,6 +68,13 @@ output:
   # Directory for generated reports
   output_dir: "output/"
 
+  # Mattermost bot integration (optional)
+  # Posts a digest summary and attaches the report file to a channel.
+  # Requires MATTERMOST_TOKEN env var (bot token — never put in config).
+  # See README for bot setup instructions.
+  # mattermost_url: "https://mattermost.example.com"
+  # mattermost_channel_id: "your-channel-id-here"
+
 # --- LLM Provider ---
 llm:
   # Provider and model (via litellm format)

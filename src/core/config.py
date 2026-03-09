@@ -38,6 +38,8 @@ class SummaryConfig:
 class OutputConfig:
     formats: list[str] = field(default_factory=lambda: ["markdown"])
     output_dir: str = "output/"
+    mattermost_url: str = ""
+    mattermost_channel_id: str = ""
 
 
 @dataclass
@@ -114,13 +116,15 @@ def _parse_config(raw: dict) -> AppConfig:
     output = OutputConfig(
         formats=output_raw.get("formats", ["markdown"]),
         output_dir=output_raw.get("output_dir", "output/"),
+        mattermost_url=output_raw.get("mattermost_url", ""),
+        mattermost_channel_id=output_raw.get("mattermost_channel_id", ""),
     )
 
     llm_raw = raw.get("llm", {})
     llm = LLMConfig(
         model=llm_raw.get("model", "openai/gpt-4o-mini"),
         temperature=llm_raw.get("temperature", 0.3),
-        max_tokens=llm_raw.get("max_tokens", 1024),
+        max_tokens=llm_raw.get("max_tokens", 4096),
     )
 
     schedule_raw = raw.get("schedule", {})

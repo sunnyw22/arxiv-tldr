@@ -192,6 +192,21 @@ class TestHtmlReport:
         assert "Why this matters:" in html
         assert "Summary:" in html
 
+    def test_katex_cdn_links(self, sample_ranked_paper):
+        """HTML report includes KaTeX CDN resources for LaTeX rendering."""
+        html = generate_html_report([sample_ranked_paper])
+        assert "katex.min.css" in html
+        assert "katex.min.js" in html
+        assert "auto-render.min.js" in html
+
+    def test_katex_auto_render_script(self):
+        """HTML report includes auto-render initialization with correct config."""
+        html = generate_html_report([])
+        assert "renderMathInElement" in html
+        assert "throwOnError: false" in html
+        assert "display: true" in html
+        assert "display: false" in html
+
 
 class TestTimestampedFilename:
     def test_basic_filename(self):
