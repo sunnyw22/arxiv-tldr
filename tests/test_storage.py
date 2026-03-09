@@ -1,5 +1,6 @@
 """Tests for SQLite storage layer."""
 
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -11,6 +12,7 @@ from src.storage.sqlite import (
     get_run_papers,
     load_paper,
     paper_exists,
+    purge_old_data,
     save_papers,
     save_run,
 )
@@ -119,3 +121,114 @@ class TestRunOperations:
 
         assert len(get_run_papers(db_conn, run1)) == 1
         assert len(get_run_papers(db_conn, run2)) == 1
+
+
+def _insert_run_at(db_conn, papers, timestamp):
+    """Helper: save a run with a specific timestamp (bypassing save_run's auto-now)."""
+    cursor = db_conn.execute(
+        "INSERT INTO runs (run_timestamp, total_fetched, total_ranked, config_snapshot) VALUES (?, ?, ?, ?)",
+        (timestamp.isoformat(), len(papers), len(papers), "{}"),
+    )
+    run_id = cursor.lastrowid
+    for rp in papers:
+        db_conn.execute(
+            "INSERT INTO run_papers (run_id, source_id, relevance_score, reasoning, summary) VALUES (?, ?, ?, ?, ?)",
+            (run_id, rp.paper.source_id, rp.relevance_score, rp.reasoning, rp.summary),
+        )
+    db_conn.commit()
+    return run_id
+
+
+def _set_paper_first_seen(db_conn, source_id, timestamp):
+    """Helper: override first_seen for a paper."""
+    db_conn.execute(
+        "UPDATE papers SET first_seen = ? WHERE source_id = ?",
+        (timestamp.isoformat(), source_id),
+    )
+    db_conn.commit()
+
+
+class TestPurgeOldData:
+    def test_dry_run_does_not_delete(self, db_conn):
+        old_time = datetime.now(timezone.utc) - timedelta(days=100)
+        p = make_paper("id-1")
+        save_papers(db_conn, [p])
+        _set_paper_first_seen(db_conn, "id-1", old_time)
+        rp = RankedPaper(paper=p, relevance_score=7, reasoning="R", summary="S")
+        _insert_run_at(db_conn, [rp], old_time)
+
+        counts = purge_old_data(db_conn, older_than_days=90, dry_run=True)
+        assert counts["runs"] == 1
+        assert counts["run_papers"] == 1
+        assert counts["orphaned_papers"] == 1
+
+        # Data should still exist
+        assert paper_exists(db_conn, "id-1")
+        assert get_last_run_timestamp(db_conn) is not None
+
+    def test_purge_old_run_and_orphaned_paper(self, db_conn):
+        old_time = datetime.now(timezone.utc) - timedelta(days=100)
+        p = make_paper("id-1")
+        save_papers(db_conn, [p])
+        _set_paper_first_seen(db_conn, "id-1", old_time)
+        rp = RankedPaper(paper=p, relevance_score=7, reasoning="R", summary="S")
+        _insert_run_at(db_conn, [rp], old_time)
+
+        counts = purge_old_data(db_conn, older_than_days=90)
+        assert counts["runs"] == 1
+        assert counts["run_papers"] == 1
+        assert counts["orphaned_papers"] == 1
+
+        # Data should be gone
+        assert not paper_exists(db_conn, "id-1")
+        assert get_last_run_timestamp(db_conn) is None
+
+    def test_keeps_recent_runs(self, db_conn):
+        old_time = datetime.now(timezone.utc) - timedelta(days=100)
+        recent_time = datetime.now(timezone.utc) - timedelta(days=10)
+
+        p1 = make_paper("id-old")
+        p2 = make_paper("id-recent")
+        save_papers(db_conn, [p1, p2])
+        _set_paper_first_seen(db_conn, "id-old", old_time)
+        _set_paper_first_seen(db_conn, "id-recent", recent_time)
+
+        rp_old = RankedPaper(paper=p1, relevance_score=5, reasoning="R", summary="S")
+        rp_recent = RankedPaper(paper=p2, relevance_score=8, reasoning="R", summary="S")
+        _insert_run_at(db_conn, [rp_old], old_time)
+        _insert_run_at(db_conn, [rp_recent], recent_time)
+
+        counts = purge_old_data(db_conn, older_than_days=90)
+        assert counts["runs"] == 1
+        assert not paper_exists(db_conn, "id-old")
+        assert paper_exists(db_conn, "id-recent")
+
+    def test_shared_paper_not_deleted(self, db_conn):
+        """A paper referenced by both an old and recent run should not be deleted."""
+        old_time = datetime.now(timezone.utc) - timedelta(days=100)
+        recent_time = datetime.now(timezone.utc) - timedelta(days=10)
+
+        p = make_paper("id-shared")
+        save_papers(db_conn, [p])
+        _set_paper_first_seen(db_conn, "id-shared", old_time)
+
+        rp = RankedPaper(paper=p, relevance_score=7, reasoning="R", summary="S")
+        _insert_run_at(db_conn, [rp], old_time)
+        _insert_run_at(db_conn, [rp], recent_time)
+
+        counts = purge_old_data(db_conn, older_than_days=90)
+        assert counts["runs"] == 1  # only old run deleted
+        assert paper_exists(db_conn, "id-shared")  # still referenced by recent run
+
+    def test_nothing_to_purge(self, db_conn):
+        recent_time = datetime.now(timezone.utc) - timedelta(days=5)
+        p = make_paper("id-1")
+        save_papers(db_conn, [p])
+        rp = RankedPaper(paper=p, relevance_score=7, reasoning="R", summary="S")
+        _insert_run_at(db_conn, [rp], recent_time)
+
+        counts = purge_old_data(db_conn, older_than_days=90)
+        assert counts["runs"] == 0
+        assert counts["run_papers"] == 0
+        assert counts["orphaned_papers"] == 0
+        assert paper_exists(db_conn, "id-1")

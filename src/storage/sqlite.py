@@ -272,6 +272,82 @@ def get_source_checkpoint(conn: sqlite3.Connection, source_name: str) -> datetim
     return datetime.fromisoformat(row["last_fetched"])
 
 
+def purge_old_data(
+    conn: sqlite3.Connection,
+    older_than_days: int,
+    dry_run: bool = False,
+) -> dict[str, int]:
+    """Delete runs older than the given number of days, plus orphaned papers.
+
+    Deletes: old runs → their run_papers → papers no longer in any run.
+    Returns counts of deleted rows per table.
+    """
+    from datetime import timedelta
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=older_than_days)).isoformat()
+
+    # 1. Identify old runs
+    old_run_ids = [
+        row[0]
+        for row in conn.execute(
+            "SELECT run_id FROM runs WHERE run_timestamp < ?", (cutoff,)
+        ).fetchall()
+    ]
+
+    # 2. Count run_papers that will be deleted
+    run_papers_count = 0
+    if old_run_ids:
+        placeholders = ",".join("?" for _ in old_run_ids)
+        run_papers_count = conn.execute(
+            f"SELECT COUNT(*) FROM run_papers WHERE run_id IN ({placeholders})",
+            old_run_ids,
+        ).fetchone()[0]
+
+    # 3. Count papers that will become orphaned after purge
+    # A paper is orphaned if it's not referenced by any run that survives
+    orphan_count = conn.execute(
+        """SELECT COUNT(*) FROM papers WHERE source_id NOT IN (
+               SELECT DISTINCT source_id FROM run_papers
+               WHERE run_id NOT IN (
+                   SELECT run_id FROM runs WHERE run_timestamp < ?
+               )
+           ) AND first_seen < ?""",
+        (cutoff, cutoff),
+    ).fetchone()[0]
+
+    counts = {
+        "runs": len(old_run_ids),
+        "run_papers": run_papers_count,
+        "orphaned_papers": orphan_count,
+    }
+
+    if dry_run or (not old_run_ids and orphan_count == 0):
+        return counts
+
+    # Delete in FK-safe order: run_papers → runs → orphaned papers
+    if old_run_ids:
+        placeholders = ",".join("?" for _ in old_run_ids)
+        conn.execute(
+            f"DELETE FROM run_papers WHERE run_id IN ({placeholders})",
+            old_run_ids,
+        )
+        conn.execute(
+            f"DELETE FROM runs WHERE run_id IN ({placeholders})",
+            old_run_ids,
+        )
+
+    # Delete papers not referenced by any remaining run and old enough
+    conn.execute(
+        """DELETE FROM papers
+           WHERE source_id NOT IN (SELECT DISTINCT source_id FROM run_papers)
+           AND first_seen < ?""",
+        (cutoff,),
+    )
+
+    conn.commit()
+    return counts
+
+
 def _row_to_paper(row: sqlite3.Row) -> Paper:
     """Convert a database row to a Paper object."""
     return Paper(

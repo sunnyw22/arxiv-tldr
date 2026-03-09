@@ -1,6 +1,7 @@
 """Research Radar CLI — entry point for running digests."""
 
 import argparse
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -8,6 +9,7 @@ from pathlib import Path
 from src.cli.wizard import run_wizard
 from src.core.config import load_config
 from src.core.config_validator import validate_config
+from src.storage.sqlite import get_connection, purge_old_data
 from src.workflows.daily_digest import run_daily_digest
 
 DEFAULT_CONFIG = "config/config.yaml"
@@ -73,6 +75,27 @@ def main():
         help="LLM model to use for config generation (default: openai/gpt-4o-mini)",
     )
 
+    # --- purge command ---
+    purge_parser = subparsers.add_parser(
+        "purge", help="Delete old runs and orphaned papers from the database"
+    )
+    purge_parser.add_argument(
+        "--older-than",
+        required=True,
+        help="Delete data older than this duration (e.g. 90d, 6m, 1y)",
+    )
+    purge_parser.add_argument(
+        "--db",
+        default=DEFAULT_DB,
+        help=f"Path to SQLite database (default: {DEFAULT_DB})",
+    )
+    purge_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Show what would be deleted without actually deleting",
+    )
+
     args = parser.parse_args()
 
     if not args.command:
@@ -83,6 +106,8 @@ def main():
         _run_digest(args)
     elif args.command == "setup":
         run_wizard(output_path=args.config, model=args.model)
+    elif args.command == "purge":
+        _run_purge(args)
 
 
 def _parse_date(date_str: str, label: str) -> datetime:
@@ -142,6 +167,41 @@ def _run_digest(args):
         print(f"  Markdown: {result['md_path']}")
     if result.get("html_path"):
         print(f"  HTML:     {result['html_path']}")
+
+
+def _parse_duration(duration_str: str) -> int:
+    """Parse a duration string like '90d', '6m', '1y' into days."""
+    match = re.fullmatch(r"(\d+)\s*([dmy])", duration_str.strip().lower())
+    if not match:
+        print(f"Invalid duration: '{duration_str}'. Use e.g. 90d, 6m, 1y.")
+        sys.exit(1)
+    value, unit = int(match.group(1)), match.group(2)
+    multipliers = {"d": 1, "m": 30, "y": 365}
+    return value * multipliers[unit]
+
+
+def _run_purge(args):
+    days = _parse_duration(args.older_than)
+    db_path = Path(args.db)
+
+    if not db_path.exists():
+        print(f"Database not found: {db_path}")
+        sys.exit(1)
+
+    conn = get_connection(db_path)
+    try:
+        counts = purge_old_data(conn, older_than_days=days, dry_run=args.dry_run)
+    finally:
+        conn.close()
+
+    label = "[DRY RUN] Would delete" if args.dry_run else "Deleted"
+    print(f"{label}:")
+    print(f"  {counts['runs']} run(s)")
+    print(f"  {counts['run_papers']} run-paper link(s)")
+    print(f"  {counts['orphaned_papers']} orphaned paper(s)")
+
+    if args.dry_run and any(counts.values()):
+        print("\nRe-run without --dry-run to actually delete.")
 
 
 if __name__ == "__main__":

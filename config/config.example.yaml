@@ -6,24 +6,26 @@
 profile:
   # Specific topic interests (used for relevance scoring)
   topic_interests:
-    - "large language models"
-    - "retrieval-augmented generation"
-    - "reasoning in LLMs"
+    - "machine learning"
+    - "particle tracking"
+    - "graph neural networks"
+    - "detector reconstruction"
 
-  # Keywords or phrases that boost relevance
+  # Keywords or phrases that boost relevance — specific terms central to your work
   required_signals:
-    - "benchmark"
-    - "evaluation"
+    - "ATLAS"
+    - "tracking efficiency"
+    - "GNN"
 
   # Keywords or phrases that reduce relevance (papers matching these are deprioritized)
   negative_filters:
     - "survey only"
-    - "workshop abstract"
+    - "review article"
 
   # Short description of your current research focus (helps LLM-based ranking)
   project_context: >
-    I am studying how retrieval-augmented generation can improve
-    factual accuracy in domain-specific question answering.
+    Applying machine learning methods, especially graph neural networks,
+    to charged particle tracking and detector reconstruction in ATLAS.
 
   # Your expertise level: beginner, intermediate, advanced, expert
   expertise_level: "advanced"
@@ -37,8 +39,9 @@ sources:
     categories:
       - "hep-ex"
       - "hep-ph"
-      - "stat.ML"
       - "cs.LG"
+      - "physics.data-an"
+      - "physics.ins-det"
 
   inspire:
     enabled: true
@@ -46,9 +49,11 @@ sources:
     keywords:
       - "tracking"
       - "machine learning"
+      - "graph neural network"
     # INSPIRE subject categories (optional)
     subject_codes:
       - "Experiment-HEP"
+      - "Computing"
 
 # --- Summary Preferences ---
 summary:

@@ -7,6 +7,8 @@ def build_synonym_prompt(profile: UserProfile) -> str:
     interests = ", ".join(profile.topic_interests) if profile.topic_interests else "not specified"
     context = profile.project_context or "not specified"
     level = profile.expertise_level or "intermediate"
+    signals = ", ".join(profile.required_signals) if profile.required_signals else "none"
+    negatives = ", ".join(profile.negative_filters) if profile.negative_filters else "none"
 
     return f"""Let's roleplay. You are a senior academic researcher and domain expert who mentors graduate students. You have deep knowledge of the literature and know exactly which search terms would surface relevant papers versus noise.
 
@@ -16,12 +18,17 @@ A researcher has asked you to help them find papers. Based on their profile, sug
 - Topic interests: {interests}
 - Research context: {context}
 - Expertise level: {level}
+- Must-have signals (terms the researcher specifically cares about): {signals}
+- Negative filters (topics to AVOID expanding toward): {negatives}
 
 **Your task:** Generate search terms — synonyms, abbreviations, and closely related concepts — that would help identify papers relevant to THIS SPECIFIC researcher's project.
 
 **Quality rules:**
 - ALWAYS include the original topic interests exactly as written — do not rephrase or merge them.
 - Add synonyms, abbreviations, and closely related concepts as SHORT terms (1-3 words) that would appear in paper titles or abstracts. Examples: "GNN", "graph neural network", "track fitting", "Kalman filter".
+- Anchor expansions around the researcher's must-have signals — these indicate what they consider most important. Generate related terms in those directions.
+- Do NOT generate terms related to the negative filters — those are explicitly unwanted.
+- Every expanded term should be something THIS researcher would plausibly search for given their project context. Ask yourself: "Would this term appear in a paper this person needs to read?"
 - Do NOT generate long phrases like "machine learning for medical imaging" — these are too specific to match. Instead, add the individual concepts: "machine learning", "medical imaging".
 - Stay tightly within the researcher's domain. Do NOT expand into adjacent fields unless the researcher's context explicitly bridges them.
 - Do NOT pad the list with generic terms (e.g., "supervised learning", "data augmentation") unless directly relevant to the project context.

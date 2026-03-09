@@ -106,7 +106,8 @@ class TestGenerateConfig:
         })
         answers = {
             "field": "ML", "topics": "GNNs", "current": "tracking",
-            "level": "advanced", "avoid": "", "days_back": "7",
+            "signals": "benchmark", "level": "advanced", "avoid": "",
+            "days_back": "7",
         }
         result = _generate_config(answers, LLMConfig())
         assert result is not None
@@ -116,13 +117,21 @@ class TestGenerateConfig:
     @patch("src.cli.wizard.call_llm")
     def test_returns_none_on_bad_json(self, mock_llm):
         mock_llm.return_value = "not valid json"
-        answers = {"field": "ML", "topics": "GNNs", "current": "", "level": "advanced", "avoid": "", "days_back": "7"}
+        answers = {
+            "field": "ML", "topics": "GNNs", "current": "",
+            "signals": "", "level": "advanced", "avoid": "",
+            "days_back": "7",
+        }
         result = _generate_config(answers, LLMConfig())
         assert result is None
 
     @patch("src.cli.wizard.call_llm")
     def test_returns_none_on_missing_keys(self, mock_llm):
         mock_llm.return_value = json.dumps({"wrong_key": "value"})
-        answers = {"field": "ML", "topics": "GNNs", "current": "", "level": "advanced", "avoid": "", "days_back": "7"}
+        answers = {
+            "field": "ML", "topics": "GNNs", "current": "",
+            "signals": "", "level": "advanced", "avoid": "",
+            "days_back": "7",
+        }
         result = _generate_config(answers, LLMConfig())
         assert result is None

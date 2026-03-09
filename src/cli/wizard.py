@@ -81,6 +81,7 @@ A researcher described their interests as follows:
 Research field: {field}
 Specific topics: {topics}
 What they want to stay current on: {current}
+Must-have keywords: {signals}
 Expertise level: {level}
 Topics to avoid: {avoid}
 
@@ -89,8 +90,8 @@ Based on this, generate a Research Radar config as a JSON object with this exact
 {{
   "profile": {{
     "topic_interests": ["list of 3-6 specific topic phrases"],
-    "required_signals": ["list of 1-3 terms that boost relevance"],
-    "negative_filters": ["list of 1-3 terms to deprioritize"],
+    "required_signals": ["1-3 terms from the researcher's must-have keywords"],
+    "negative_filters": ["1-3 terms from the researcher's avoidance topics"],
     "project_context": "one sentence describing their research focus",
     "expertise_level": "beginner|intermediate|advanced|expert"
   }},
@@ -113,10 +114,12 @@ The researcher specified a search window of: {days_back}
 
 Rules:
 - topic_interests should be short (1-4 words each), specific to their research
+- required_signals: use the researcher's must-have keywords directly. \
+Only infer if they left it blank. Never fabricate signals.
+- negative_filters: use the researcher's avoidance topics directly. Should be empty [] if they didn't mention any.
 - arXiv categories must be real codes (e.g., cs.LG not "machine learning")
 - Only enable INSPIRE if the research is physics-related
 - project_context should be a single concise sentence
-- negative_filters should be empty [] unless the researcher explicitly mentioned topics to avoid
 - search_days_back must be an integer: convert natural language like \
 "1 year" to 365, "5 years" to 1825, "2 weeks" to 14, "3 months" to 90, etc.
 
@@ -390,11 +393,18 @@ def _ask_questions() -> dict:
         ("current",
          "What do you want to stay current on?\n"
          "  (e.g., new architectures, benchmark results, specific methods)\n  > "),
+        ("signals",
+         "What keywords MUST appear for a paper to be highly relevant?\n"
+         "  These are specific terms central to your work — names of methods,\n"
+         "  experiments, datasets, or tools you actively use.\n"
+         "  (e.g., ATLAS, transformer, benchmark, PyTorch — leave blank to skip)\n  > "),
         ("level",
          "What is your expertise level?"
          " [beginner/intermediate/advanced/expert]\n  > "),
         ("avoid",
-         "Any topics you want to AVOID? (leave blank to skip)\n  > "),
+         "Any topics you want to AVOID?\n"
+         "  Papers matching these terms will be deprioritized.\n"
+         "  (e.g., survey only, review article, Monte Carlo — leave blank to skip)\n  > "),
     ]
 
     answers = {}
