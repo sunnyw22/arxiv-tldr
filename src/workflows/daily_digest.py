@@ -8,7 +8,7 @@ import hashlib
 import json
 import re
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from src.core.config import AppConfig
@@ -26,6 +26,7 @@ from src.storage.sqlite import (
     get_connection,
     get_last_run_timestamp,
     get_run_papers,
+    get_source_checkpoint,
     save_papers,
     save_run,
     save_source_checkpoint,
@@ -37,6 +38,8 @@ def profile_hash(profile: UserProfile) -> str:
     """Deterministic hash of profile fields that affect ranking."""
     key_fields = {
         "topic_interests": sorted(profile.topic_interests),
+        "required_signals": sorted(profile.required_signals),
+        "negative_filters": sorted(profile.negative_filters),
         "project_context": profile.project_context.strip(),
         "expertise_level": profile.expertise_level.strip(),
     }
@@ -71,42 +74,55 @@ def run_daily_digest(
         "inspire_fetched": 0,
     }
 
+    # --- Determine fetch mode ---
+    # Active search: user provided explicit --since/--until
+    # Daily radar: use checkpoint, default to 7 days back on first run
+    active_search = since_date is not None or until_date is not None
+
+    if active_search:
+        fetch_since = since_date
+        fetch_until = until_date
+        mode_label = "active search"
+    else:
+        # Daily radar mode: pick up where we left off
+        checkpoint = get_source_checkpoint(conn, "arxiv")
+        if checkpoint is not None:
+            fetch_since = checkpoint
+            mode_label = f"checkpoint ({checkpoint.strftime('%Y-%m-%d')})"
+        else:
+            fetch_since = datetime.now(timezone.utc) - timedelta(days=7)
+            mode_label = "first run (last 7 days)"
+        fetch_until = None
+
+    print(f"Fetch mode: {mode_label}")
+
     # --- 1. Fetch papers from sources ---
-    all_papers, source_counts = _fetch_papers(config)
+    all_papers, source_counts = _fetch_papers(
+        config, since_date=fetch_since, until_date=fetch_until,
+    )
     pipeline_stats["arxiv_fetched"] = source_counts.get("arxiv", 0)
     pipeline_stats["inspire_fetched"] = source_counts.get("inspire", 0)
     total_fetched = len(all_papers)
     pipeline_stats["total_fetched"] = total_fetched
     print(f"Fetched {total_fetched} papers from sources")
 
-    # Save source checkpoints
-    now_ts = datetime.now(timezone.utc)
-    if source_counts.get("arxiv", 0) > 0:
-        save_source_checkpoint(conn, "arxiv", now_ts, source_counts["arxiv"])
-    if source_counts.get("inspire", 0) > 0:
-        save_source_checkpoint(conn, "inspire", now_ts, source_counts["inspire"])
+    # Save source checkpoints (only in daily radar mode)
+    if not active_search:
+        now_ts = datetime.now(timezone.utc)
+        if source_counts.get("arxiv", 0) > 0:
+            save_source_checkpoint(conn, "arxiv", now_ts, source_counts["arxiv"])
+        if source_counts.get("inspire", 0) > 0:
+            save_source_checkpoint(conn, "inspire", now_ts, source_counts["inspire"])
 
     if not all_papers:
         print("No papers fetched. Check your source configuration.")
         conn.close()
         return {"ranked_papers": [], "stats": {"total_fetched": 0}}
 
-    # --- 1b. Apply date window filter ---
-    if since_date or until_date:
-        all_papers = _filter_by_date(all_papers, since_date, until_date)
-        print(f"After date filter: {len(all_papers)} papers")
-        if not all_papers:
-            print("No papers in the specified date range.")
-            conn.close()
-            return {"ranked_papers": [], "stats": {"total_fetched": total_fetched}}
-
     # Build digest window description
-    if since_date or until_date:
-        since_str = since_date.strftime("%Y-%m-%d") if since_date else "earliest"
-        until_str = until_date.strftime("%Y-%m-%d") if until_date else "latest"
-        pipeline_stats["digest_window"] = f"Papers from {since_str} to {until_str}"
-    else:
-        pipeline_stats["digest_window"] = f"Fetched {total_fetched} most recent papers"
+    since_str = fetch_since.strftime("%Y-%m-%d") if fetch_since else "earliest"
+    until_str = fetch_until.strftime("%Y-%m-%d") if fetch_until else "latest"
+    pipeline_stats["digest_window"] = f"Papers from {since_str} to {until_str}"
 
     # --- 2. Cross-source dedup ---
     unique = _dedup_papers(all_papers)
@@ -217,8 +233,17 @@ def _filter_by_date(
     return filtered
 
 
-def _fetch_papers(config: AppConfig) -> tuple[list[Paper], dict[str, int]]:
+def _fetch_papers(
+    config: AppConfig,
+    since_date: datetime | None = None,
+    until_date: datetime | None = None,
+) -> tuple[list[Paper], dict[str, int]]:
     """Fetch papers from all enabled sources.
+
+    Args:
+        config: Application configuration.
+        since_date: Only include papers submitted on or after this date.
+        until_date: Only include papers submitted on or before this date.
 
     Returns:
         Tuple of (papers, source_counts) where source_counts maps source name to count.
@@ -230,10 +255,14 @@ def _fetch_papers(config: AppConfig) -> tuple[list[Paper], dict[str, int]]:
         print("Fetching from arXiv API...")
         try:
             arxiv = ArxivAPI()
+            # arXiv API doesn't support date filtering, so over-fetch and
+            # filter client-side. Use max_results as the fetch cap.
             arxiv_papers = arxiv.fetch(
                 categories=config.sources.arxiv.categories,
                 max_results=config.sources.arxiv.max_results,
             )
+            # Client-side date filter
+            arxiv_papers = _filter_by_date(arxiv_papers, since_date, until_date)
             print(f"  arXiv: {len(arxiv_papers)} papers")
             source_counts["arxiv"] = len(arxiv_papers)
             papers.extend(arxiv_papers)
@@ -246,12 +275,20 @@ def _fetch_papers(config: AppConfig) -> tuple[list[Paper], dict[str, int]]:
         if keywords or subject_codes:
             print("Fetching from INSPIRE...")
             try:
+                # Compute days_back from since_date for INSPIRE's server-side filter
+                days_back = 30  # default
+                if since_date:
+                    delta = datetime.now(timezone.utc) - since_date
+                    days_back = max(int(delta.total_seconds() / 86400) + 1, 1)
                 inspire = InspireAPI()
                 inspire_papers = inspire.fetch(
                     keywords=keywords,
                     subject_codes=subject_codes,
                     max_results=config.sources.inspire.max_results,
+                    days_back=days_back,
                 )
+                # Client-side filter for precision (INSPIRE date granularity is day-level)
+                inspire_papers = _filter_by_date(inspire_papers, since_date, until_date)
                 print(f"  INSPIRE: {len(inspire_papers)} papers")
                 source_counts["inspire"] = len(inspire_papers)
                 papers.extend(inspire_papers)

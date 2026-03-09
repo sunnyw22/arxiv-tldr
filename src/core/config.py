@@ -120,7 +120,7 @@ def _parse_config(raw: dict) -> AppConfig:
     llm = LLMConfig(
         model=llm_raw.get("model", "openai/gpt-4o-mini"),
         temperature=llm_raw.get("temperature", 0.3),
-        max_tokens=llm_raw.get("max_tokens", 1024),
+        max_tokens=llm_raw.get("max_tokens", 4096),
     )
 
     schedule_raw = raw.get("schedule", {})

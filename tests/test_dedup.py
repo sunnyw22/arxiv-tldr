@@ -272,24 +272,20 @@ class TestProfileHash:
         p2 = UserProfile(topic_interests=["A", "B"])
         assert profile_hash(p1) == profile_hash(p2)
 
-    def test_hash_excludes_required_signals_and_negative_filters(self):
-        """required_signals and negative_filters are intentionally excluded from the hash.
+    def test_hash_includes_required_signals_and_negative_filters(self):
+        """required_signals and negative_filters are included in the hash.
 
-        These fields only affect the pre-sort stage (keyword scoring and hard rejection),
-        not the LLM scoring prompt. Papers rejected by negative_filters are never scored,
-        so they have no cached scores to go stale. When filters change, rejected papers
-        simply re-enter the pre-sort with the new config and get evaluated fresh.
-
-        The LLM prompt only uses: topic_interests, project_context, expertise_level.
-        The hash correctly covers exactly those fields.
+        These fields affect synonym expansion (which terms the LLM generates)
+        and keyword pre-sort (which papers reach LLM scoring). Changing them
+        should invalidate cached scores to ensure re-ranking.
         """
         p1 = UserProfile(topic_interests=["ML"], required_signals=["ATLAS"])
         p2 = UserProfile(topic_interests=["ML"], required_signals=["CMS"])
-        assert profile_hash(p1) == profile_hash(p2)
+        assert profile_hash(p1) != profile_hash(p2)
 
         p3 = UserProfile(topic_interests=["ML"], negative_filters=["survey"])
         p4 = UserProfile(topic_interests=["ML"], negative_filters=["robotics"])
-        assert profile_hash(p3) == profile_hash(p4)
+        assert profile_hash(p3) != profile_hash(p4)
 
 
 class TestScoreReuse:
@@ -328,9 +324,9 @@ class TestScoreReuse:
         assert "id-scored" in reused_ids
         assert "id-filtered" not in reused_ids
 
-    def test_removing_negative_filter_allows_rescoring(self, db_conn):
-        """When a negative filter is removed, previously-rejected papers
-        have no cached scores, so they naturally go to needs_scoring."""
+    def test_removing_negative_filter_invalidates_cache(self, db_conn):
+        """When a negative filter is removed, the hash changes and all
+        cached scores are invalidated, forcing a full re-rank."""
         scored_paper = make_paper("id-scored", "Good Paper")
         filtered_paper = make_paper("id-filtered", "Survey Only: Filtered Paper")
         save_papers(db_conn, [scored_paper, filtered_paper])
@@ -341,19 +337,16 @@ class TestScoreReuse:
         ranked = [RankedPaper(paper=scored_paper, relevance_score=8, reasoning="R", summary="S")]
         save_run(db_conn, ranked, total_fetched=2, config_snapshot={"profile_hash": hash_v1})
 
-        # Run 2: negative filter removed — but hash is the same (filters not in hash)
+        # Run 2: negative filter removed → different hash → cache invalidated
         profile_v2 = UserProfile(topic_interests=["ML"], negative_filters=[])
         hash_v2 = profile_hash(profile_v2)
-        assert hash_v1 == hash_v2  # same hash since LLM-affecting fields unchanged
+        assert hash_v1 != hash_v2
 
         both_papers = [scored_paper, filtered_paper]
         reused = _load_previous_scores(db_conn, hash_v2, both_papers)
 
-        # scored_paper reused, filtered_paper has no cached score → goes to needs_scoring
-        reused_ids = {rp.paper.source_id for rp in reused}
-        assert "id-scored" in reused_ids
-        assert "id-filtered" not in reused_ids
-        # filtered_paper would then hit pre-sort with no negative filter → pass → LLM scored
+        # All scores invalidated — both papers go to needs_scoring
+        assert len(reused) == 0
 
     def test_profile_change_invalidates_all_cached_scores(self, db_conn):
         """Changing topic_interests (which IS in the hash) invalidates all cached scores."""

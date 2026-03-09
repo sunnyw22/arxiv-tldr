@@ -63,6 +63,9 @@ summary:
   # Maximum number of papers in the daily digest
   max_papers: 15
 
+  # Minimum relevance score to include in digest (1-10, default: 4)
+  min_score: 4
+
 # --- Output Preferences ---
 output:
   # Output formats to generate: markdown, html

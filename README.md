@@ -82,21 +82,50 @@ See `output_sample/` for example reports.
 
 ## CLI Usage
 
+### `digest` — Run a daily digest
+
 ```bash
-# Run a digest with default settings
+# Run a digest (daily radar mode — uses checkpoint, defaults to last 7 days)
 python -m src.cli digest
 
-# Custom config file
-python -m src.cli digest --config path/to/config.yaml
-
-# Custom database path
-python -m src.cli digest --db path/to/database.db
-
-# Filter by date range
+# Active search mode — fetch a specific date range (ignores checkpoint)
 python -m src.cli digest --since 2026-03-01 --until 2026-03-07
+
+# Custom config and database paths
+python -m src.cli digest --config path/to/config.yaml --db path/to/database.db
 
 # Skip LLM-based config validation (faster startup)
 python -m src.cli digest --skip-validation
+
+# Non-interactive mode (skip keyword review — use for CI/headless runs)
+python -m src.cli digest --no-interactive
+```
+
+**Fetch modes:**
+- **Daily radar** (default): First run fetches the last 7 days. Subsequent runs pick up from the last checkpoint automatically.
+- **Active search** (`--since`/`--until`): Fetches the specified window, ignores checkpoints, and does not update them.
+
+### `setup` — Interactive config wizard
+
+```bash
+# Generate a config via LLM-assisted interview
+python -m src.cli setup
+
+# Custom output path and model
+python -m src.cli setup --config config/my_config.yaml --model openai/gpt-4o-mini
+```
+
+### `purge` — Clean old data from the database
+
+```bash
+# Preview what would be deleted
+python -m src.cli purge --older-than 90d --dry-run
+
+# Delete old runs and orphaned papers
+python -m src.cli purge --older-than 90d
+
+# Supports days (d), months (m), years (y)
+python -m src.cli purge --older-than 6m --db path/to/database.db
 ```
 
 ## Configuration
@@ -107,34 +136,37 @@ Copy `config/config.example.yaml` to `config/config.yaml` and customize:
 # Your research profile (what you care about)
 profile:
   topic_interests:
-    - "large language models"
-    - "retrieval-augmented generation"
-  required_signals:          # Keywords that boost relevance
-    - "benchmark"
-    - "evaluation"
-  negative_filters:          # Keywords that reject papers
+    - "machine learning"
+    - "particle tracking"
+    - "graph neural networks"
+  required_signals:            # Must-have keywords — boost relevance
+    - "ATLAS"
+    - "GNN"
+  negative_filters:            # Papers matching these are deprioritized
     - "survey only"
-    - "workshop abstract"
-  project_context: >         # Your current research focus (helps LLM rank better)
-    I am studying how retrieval-augmented generation can improve
-    factual accuracy in domain-specific question answering.
+    - "review article"
+  project_context: >           # Your current research focus (helps LLM rank better)
+    Applying machine learning methods, especially graph neural networks,
+    to charged particle tracking and detector reconstruction in ATLAS.
   expertise_level: "advanced"  # beginner | intermediate | advanced | expert
 
 # Where to look for papers
 sources:
   arxiv:
     enabled: true
-    categories: ["cs.LG", "cs.CL"]    # arXiv categories to monitor
-    max_results: 50                     # Max papers to fetch per run
+    categories: ["hep-ex", "cs.LG"]   # arXiv categories to monitor
+    max_results: 50                     # Safety cap for API fetch
   inspire:
     enabled: true
-    keywords: ["machine learning"]      # INSPIRE keyword search
-    subject_codes: ["Experiment-HEP"]   # INSPIRE subject filter
+    keywords: ["tracking", "machine learning"]
+    subject_codes: ["Experiment-HEP"]
     max_results: 50
 
 # Output settings
 summary:
+  style: "concise"           # concise | detailed | technical
   max_papers: 15             # Max papers in digest (ties at cutoff included)
+  min_score: 4               # Minimum relevance score to include (1-10)
 
 output:
   formats: ["markdown", "html"]
@@ -194,7 +226,7 @@ The repo includes a GitHub Actions workflow that runs the digest automatically o
 - **Runs Mon–Fri at 02:00 UTC** (~1–2 hours after arXiv announcements)
 - arXiv announces new papers Sun–Thu evenings at 20:00 ET (00:00–01:00 UTC next day)
 - Monday's run catches Sunday evening's announcement (Thu–Fri submissions + weekend backlog)
-- Monday also picks up weekend INSPIRE papers via the "most recent N" fetch
+- Each scheduled run picks up from the last checkpoint automatically (no gaps, no duplicates)
 
 ### Setup (for forks)
 
