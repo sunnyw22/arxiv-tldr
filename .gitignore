@@ -6,7 +6,8 @@ config/config.yaml
 .venv/
 venv/
 output/
-data/
+data/*
+!data/schema.sql
 *.db
 .claude/
 .DS_Store

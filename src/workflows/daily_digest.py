@@ -20,7 +20,7 @@ from src.ranking.synonym import expand_keywords, expand_keywords_interactive
 from src.reports import timestamped_filename
 from src.reports.html import generate_html_report
 from src.reports.markdown import generate_markdown_report
-from src.reports.mattermost import format_summary, send_digest
+from src.reports.mattermost import format_digest_message, post_webhook
 from src.sources.arxiv_api import ArxivAPI
 from src.sources.arxiv_rss import ArxivRSS
 from src.sources.inspire import InspireAPI
@@ -201,7 +201,7 @@ def run_daily_digest(
     )
 
     # --- 9. Mattermost delivery (optional) ---
-    _maybe_send_mattermost(config, all_ranked, pipeline_stats, md_path, html_path)
+    _maybe_send_mattermost(config, all_ranked, pipeline_stats, all_papers=unique)
 
     conn.close()
 
@@ -573,29 +573,27 @@ def _maybe_send_mattermost(
     config: AppConfig,
     ranked_papers: list,
     pipeline_stats: dict,
-    md_path: str | None,
-    html_path: str | None,
+    all_papers: list | None = None,
 ) -> None:
-    """Post digest to Mattermost if configured. Never raises."""
+    """Post digest to Mattermost via incoming webhook if configured.
+
+    Requires MATTERMOST_WEBHOOK_URL env var. The webhook URL is a secret
+    that encodes the target channel — never log or expose it.
+    """
     import os
 
-    mm_url = config.output.mattermost_url
-    mm_channel = config.output.mattermost_channel_id
-    mm_token = os.environ.get("MATTERMOST_TOKEN", "")
-
-    if not (mm_url and mm_channel and mm_token):
+    webhook_url = os.environ.get("MATTERMOST_WEBHOOK_URL", "")
+    if not webhook_url:
         return
 
-    summary = format_summary(ranked_papers, pipeline_stats)
+    message = format_digest_message(
+        ranked_papers,
+        pipeline_stats,
+        model=config.llm.model,
+        all_papers=all_papers,
+    )
 
-    # Prefer HTML report, fall back to markdown
-    report_path = html_path or md_path
-    if report_path:
-        ok = send_digest(mm_url, mm_token, mm_channel, report_path, summary)
-    else:
-        from src.reports.mattermost import create_post
-        ok = create_post(mm_url, mm_token, mm_channel, summary)
-
+    ok = post_webhook(webhook_url, message)
     if ok:
         print("Mattermost digest posted successfully")
     else:

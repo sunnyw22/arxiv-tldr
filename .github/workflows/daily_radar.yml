@@ -45,6 +45,7 @@ jobs:
       - name: Run daily digest
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
         run: |
           ARGS="digest --skip-validation --no-interactive --use-rss"
           if [ -n "${{ github.event.inputs.since }}" ]; then

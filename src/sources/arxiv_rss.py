@@ -79,14 +79,21 @@ class ArxivRSS(BaseSource):
         return match.group(1) if match else None
 
     def _parse_authors(self, entry: dict) -> list[str]:
-        """Extract author names from RSS entry."""
-        # feedparser puts dc:creator into 'author' or 'authors'
+        """Extract author names from RSS entry.
+
+        arXiv RSS typically puts all authors in a single 'name' field,
+        comma-separated. We split on commas to get individual names.
+        """
+        raw = ""
         if "authors" in entry:
-            return [a.get("name", "") for a in entry["authors"] if a.get("name")]
-        if "author" in entry:
-            # Sometimes a single string, sometimes comma-separated
+            names = [a.get("name", "") for a in entry["authors"] if a.get("name")]
+            raw = ", ".join(names)
+        elif "author" in entry:
             raw = entry["author"]
-            # Strip HTML tags
-            raw = re.sub(r"<[^>]+>", "", raw)
-            return [a.strip() for a in raw.split(",") if a.strip()]
-        return []
+
+        if not raw:
+            return []
+
+        # Strip HTML tags, then split on commas
+        raw = re.sub(r"<[^>]+>", "", raw)
+        return [a.strip() for a in raw.split(",") if a.strip()]

@@ -1,200 +1,141 @@
-"""Mattermost bot integration for digest delivery.
+"""Mattermost incoming webhook integration for digest delivery.
 
-Posts summaries and uploads report files via the Mattermost REST API v4.
+Posts digest summaries via incoming webhook. The webhook URL is the only
+secret needed — it encodes the target channel. Never log or expose it.
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from pathlib import Path
 
 import requests
 
 from src.ranking.rerank_llm import RankedPaper
+from src.reports import short_model_name
 
 logger = logging.getLogger(__name__)
 
-
-def _normalize_url(server_url: str) -> str:
-    """Strip trailing slash from server URL."""
-    return server_url.rstrip("/")
+# Mattermost message limit is 16383 chars; stay well under.
+MAX_MESSAGE_LEN = 14000
 
 
-def upload_file(
-    server_url: str, token: str, channel_id: str, file_path: str | Path
-) -> str | None:
-    """Upload a file to a Mattermost channel.
-
-    POST multipart form data to /api/v4/files.
-
-    Args:
-        server_url: Mattermost server base URL (no trailing slash).
-        token: Bot or personal access token.
-        channel_id: Target channel ID.
-        file_path: Local path to the file to upload.
-
-    Returns:
-        The file_id on success, None on failure.
-    """
-    url = f"{_normalize_url(server_url)}/api/v4/files"
-    path = Path(file_path)
-
-    try:
-        with path.open("rb") as f:
-            resp = requests.post(
-                url,
-                headers={"Authorization": f"Bearer {token}"},
-                data={"channel_id": channel_id},
-                files={"files": (path.name, f)},
-                timeout=60,
-            )
-        resp.raise_for_status()
-        file_infos = resp.json().get("file_infos", [])
-        if file_infos:
-            file_id = file_infos[0]["id"]
-            logger.info("Uploaded file %s (id=%s)", path.name, file_id)
-            return file_id
-        logger.warning("Upload response contained no file_infos")
-        return None
-    except Exception:
-        logger.exception("Failed to upload file %s", file_path)
-        return None
-
-
-def create_post(
-    server_url: str,
-    token: str,
-    channel_id: str,
-    message: str,
-    file_ids: list[str] | None = None,
+def post_webhook(
+    webhook_url: str,
+    text: str,
+    username: str = "Research Radar",
+    icon_url: str = "",
 ) -> bool:
-    """Create a post in a Mattermost channel.
-
-    POST JSON to /api/v4/posts.
+    """Send a message via Mattermost incoming webhook.
 
     Args:
-        server_url: Mattermost server base URL (no trailing slash).
-        token: Bot or personal access token.
-        channel_id: Target channel ID.
-        message: Post body (markdown supported).
-        file_ids: Optional list of previously uploaded file IDs to attach.
+        webhook_url: Full incoming webhook URL (secret — never log this).
+        text: Message body (Mattermost markdown supported).
+        username: Display name override for the bot post.
+        icon_url: Optional avatar URL override.
 
     Returns:
         True on success, False on failure.
     """
-    url = f"{_normalize_url(server_url)}/api/v4/posts"
     payload: dict = {
-        "channel_id": channel_id,
-        "message": message,
+        "text": text,
+        "username": username,
     }
-    if file_ids:
-        payload["file_ids"] = file_ids
+    if icon_url:
+        payload["icon_url"] = icon_url
 
     try:
-        resp = requests.post(
-            url,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-            timeout=30,
-        )
+        resp = requests.post(webhook_url, json=payload, timeout=30)
         resp.raise_for_status()
-        logger.info("Posted message to channel %s", channel_id)
+        logger.info("Webhook post succeeded")
         return True
     except Exception:
-        logger.exception("Failed to create post in channel %s", channel_id)
+        # Log the error but NEVER log the webhook URL
+        logger.exception("Failed to post via incoming webhook")
         return False
 
 
-def send_digest(
-    server_url: str,
-    token: str,
-    channel_id: str,
-    report_path: str | Path,
-    summary: str,
-) -> bool:
-    """Send a digest to Mattermost: upload report file and post summary.
-
-    Attempts to upload the report file first. If the upload succeeds, the
-    summary is posted with the file attached. If the upload fails or the file
-    doesn't exist, falls back to posting just the summary text.
-
-    Args:
-        server_url: Mattermost server base URL (no trailing slash).
-        token: Bot or personal access token.
-        channel_id: Target channel ID.
-        report_path: Path to the generated report file.
-        summary: Formatted summary text for the channel message.
-
-    Returns:
-        True if the post was sent (with or without attachment), False on
-        total failure.
-    """
-    server_url = _normalize_url(server_url)
-
-    # Only attempt upload if the file exists
-    path = Path(report_path)
-    file_id = None
-    if path.exists():
-        file_id = upload_file(server_url, token, channel_id, report_path)
-
-    if file_id:
-        return create_post(server_url, token, channel_id, summary, file_ids=[file_id])
-
-    if not path.exists():
-        logger.warning("Report file not found: %s; posting summary only", report_path)
-    else:
-        logger.warning("File upload failed; falling back to text-only post")
-    return create_post(server_url, token, channel_id, summary)
-
-
-def format_summary(
+def format_digest_message(
     ranked_papers: list[RankedPaper],
     pipeline_stats: dict,
+    model: str = "",
+    all_papers: list | None = None,
 ) -> str:
-    """Build a compact markdown summary for a Mattermost channel message.
+    """Build a compact Mattermost message for the daily digest.
+
+    Keeps the message short to avoid spamming the channel:
+    - Header with stats
+    - Score table with paper titles and links
+    - Truncates if too many papers
 
     Args:
-        ranked_papers: Scored and summarised papers (already filtered/sorted).
-        pipeline_stats: Dict with at least ``total_fetched`` key.
+        ranked_papers: Scored papers (already filtered/sorted).
+        pipeline_stats: Dict with pipeline statistics.
+        model: LLM model name for attribution.
+        all_papers: All fetched papers (for total count display).
 
     Returns:
-        Markdown string ready to post.
+        Markdown string ready to post via webhook.
     """
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     total_fetched = pipeline_stats.get("total_fetched", 0)
     n_papers = len(ranked_papers)
+    model_label = short_model_name(model) if model else ""
 
     lines: list[str] = [
-        f"### Research Radar Digest — {today}",
-        f"**{n_papers} papers** scored from {total_fetched} fetched",
-        "",
+        f"#### :satellite: Research Radar — {today}",
+        f"**{n_papers} relevant** from {total_fetched} fetched",
     ]
+
+    # Pipeline breakdown (one line)
+    kw_passed = pipeline_stats.get("keyword_passed")
+    kw_rejected = pipeline_stats.get("keyword_rejected")
+    if kw_passed is not None:
+        lines.append(
+            f"Keyword filter: {kw_passed} passed, {kw_rejected} rejected "
+            f"| LLM scored: {pipeline_stats.get('llm_scored', '?')}"
+        )
+    lines.append("")
 
     if ranked_papers:
         lines.append("| Score | Paper |")
-        lines.append("|-------|-------|")
+        lines.append("|:---:|:---|")
         for rp in ranked_papers:
             link_url = rp.paper.source_url or rp.paper.pdf_url or ""
+            title = rp.paper.title
             if link_url:
-                title_cell = f"[{rp.paper.title}]({link_url})"
+                title_cell = f"[{title}]({link_url})"
             else:
-                title_cell = rp.paper.title
+                title_cell = title
+
+            # Add one-line takeaway if available
             takeaway = rp.abstract_takeaway
             if not takeaway:
-                takeaway = rp.summary.split(". ")[0]
+                takeaway = rp.summary.split(". ")[0] if rp.summary else ""
                 if takeaway and not takeaway.endswith("."):
                     takeaway += "."
             if takeaway:
-                title_cell += f" — {takeaway}"
-            lines.append(f"| {rp.relevance_score}/10 | {title_cell} |")
+                title_cell += f" — *{takeaway}*"
+
+            lines.append(f"| **{rp.relevance_score}** | {title_cell} |")
     else:
         lines.append("No papers met the relevance threshold today.")
 
     lines.append("")
-    lines.append("*Generated by Research Radar*")
 
-    return "\n".join(lines)
+    # Footer
+    footer_parts = []
+    if model_label:
+        footer_parts.append(f"Model: {model_label}")
+    if all_papers:
+        footer_parts.append(f"{len(all_papers)} total papers scanned")
+    if footer_parts:
+        lines.append(f"*{' | '.join(footer_parts)}*")
+
+    message = "\n".join(lines)
+
+    # Truncate if too long
+    if len(message) > MAX_MESSAGE_LEN:
+        message = message[:MAX_MESSAGE_LEN] + "\n\n*... message truncated*"
+
+    return message
