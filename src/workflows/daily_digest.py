@@ -20,7 +20,7 @@ from src.ranking.synonym import expand_keywords, expand_keywords_interactive
 from src.reports import timestamped_filename
 from src.reports.html import generate_html_report
 from src.reports.markdown import generate_markdown_report
-from src.reports.mattermost import format_digest_message, post_webhook
+from src.reports.mattermost import send_digest_messages
 from src.sources.arxiv_api import ArxivAPI
 from src.sources.arxiv_rss import ArxivRSS
 from src.sources.inspire import InspireAPI
@@ -165,6 +165,7 @@ def run_daily_digest(
     pipeline_stats["keyword_passed"] = keyword_passed
     pipeline_stats["keyword_rejected"] = keyword_rejected
     pipeline_stats["llm_scored"] = len(newly_ranked)
+    pipeline_stats["reused_scored"] = len(previous_ranked)
     pipeline_stats["expanded_keywords"] = expanded_keywords
 
     # --- 6. Merge and sort ---
@@ -586,14 +587,14 @@ def _maybe_send_mattermost(
     if not webhook_url:
         return
 
-    message = format_digest_message(
+    ok = send_digest_messages(
+        webhook_url,
         ranked_papers,
         pipeline_stats,
         model=config.llm.model,
-        all_papers=all_papers,
+        llm_config=config.llm,
+        profile=config.profile,
     )
-
-    ok = post_webhook(webhook_url, message)
     if ok:
         print("Mattermost digest posted successfully")
     else:

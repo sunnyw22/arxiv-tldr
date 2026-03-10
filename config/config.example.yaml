@@ -51,8 +51,8 @@ sources:
       - "cs.AI"
 
   inspire:
-    enabled: true
-    # INSPIRE keyword searches
+    enabled: false
+    # INSPIRE keyword searches (disabled — most papers appear on arXiv already)
     keywords:
       - "tracking"
       - "tagging"

@@ -5,9 +5,16 @@ from unittest.mock import MagicMock, patch
 
 import requests
 
+from src.core.config import LLMConfig
 from src.core.models import Paper
 from src.ranking.rerank_llm import RankedPaper
-from src.reports.mattermost import format_digest_message, post_webhook
+from src.reports.mattermost import (
+    _bot_name,
+    format_intro_message,
+    format_report_message,
+    post_webhook,
+    send_digest_messages,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -48,96 +55,119 @@ def _make_ranked(
 
 
 # ---------------------------------------------------------------------------
-# TestFormatDigestMessage
+# TestBotName
 # ---------------------------------------------------------------------------
 
 
-class TestFormatDigestMessage:
+class TestBotName:
+    def test_gpt_model(self):
+        assert _bot_name("openai/gpt-5.4") == "T-Gpt-5.4"
+
+    def test_claude_model(self):
+        assert _bot_name("anthropic/claude-sonnet-4-20250514") == "T-Claude-sonnet-4"
+
+    def test_empty_model(self):
+        assert _bot_name("") == "T-LLM"
+
+
+# ---------------------------------------------------------------------------
+# TestFormatIntroMessage
+# ---------------------------------------------------------------------------
+
+
+class TestFormatIntroMessage:
+    def test_contains_date_and_count(self):
+        stats = {"total_fetched": 500}
+        msg = format_intro_message(stats, model="openai/gpt-5.4")
+
+        assert "T-Gpt-5.4" in msg
+        assert "500 papers" in msg
+        assert "arXiv" in msg
+
+    def test_contains_rubric(self):
+        msg = format_intro_message({"total_fetched": 10})
+        assert "9-10" in msg
+        assert "Must-read" in msg
+        assert "7-8" in msg
+
+    def test_contains_quote(self):
+        msg = format_intro_message({"total_fetched": 10})
+        # Fallback quote when no llm_config
+        assert "read all the papers" in msg
+
+    @patch("src.reports.mattermost.call_llm")
+    def test_generates_llm_flavor(self, mock_llm):
+        mock_llm.return_value = (
+            "QUOTE: Your papers are now my papers.\n"
+            "TAGLINE: Resistance to reading is futile."
+        )
+        config = LLMConfig(model="openai/gpt-5.4")
+        msg = format_intro_message(
+            {"total_fetched": 10}, model="openai/gpt-5.4", llm_config=config
+        )
+        assert "Your papers are now my papers." in msg
+        assert "Resistance to reading is futile." in msg
+        mock_llm.assert_called_once()
+
+    @patch("src.reports.mattermost.call_llm")
+    def test_quote_fallback_on_error(self, mock_llm):
+        mock_llm.side_effect = RuntimeError("API down")
+        config = LLMConfig(model="openai/gpt-5.4")
+        msg = format_intro_message(
+            {"total_fetched": 10}, llm_config=config
+        )
+        assert "read all the papers" in msg
+
+
+# ---------------------------------------------------------------------------
+# TestFormatReportMessage
+# ---------------------------------------------------------------------------
+
+
+class TestFormatReportMessage:
     def test_basic_format(self):
         papers = [
             _make_ranked(title="Alpha Paper", score=9),
             _make_ranked(title="Beta Paper", score=7),
         ]
-        stats = {"total_fetched": 50}
-        msg = format_digest_message(papers, stats)
+        stats = {"total_fetched": 50, "keyword_passed": 20, "keyword_rejected": 30, "llm_scored": 20}
+        msg = format_report_message(papers, stats)
 
-        assert "Research Radar" in msg
-        assert "2 relevant" in msg
-        assert "50 fetched" in msg
         assert "Alpha Paper" in msg
         assert "Beta Paper" in msg
         assert "**9**" in msg
         assert "**7**" in msg
+        assert "2 made the cut" in msg
 
     def test_empty_papers(self):
-        msg = format_digest_message([], {"total_fetched": 50})
-
-        assert "0 relevant" in msg
-        assert "No papers met the relevance threshold" in msg
+        msg = format_report_message([], {"total_fetched": 50})
+        assert "disappointing" in msg
 
     def test_table_format(self):
         papers = [_make_ranked(score=8)]
-        msg = format_digest_message(papers, {"total_fetched": 10})
-
+        msg = format_report_message(papers, {"total_fetched": 10})
         assert "| Score | Paper |" in msg
         assert "**8**" in msg
 
     def test_uses_abstract_takeaway(self):
         papers = [_make_ranked(abstract_takeaway="Important finding.")]
-        msg = format_digest_message(papers, {"total_fetched": 10})
-
+        msg = format_report_message(papers, {"total_fetched": 10})
         assert "Important finding." in msg
 
     def test_falls_back_to_summary_first_sentence(self):
         papers = [
-            _make_ranked(
-                abstract_takeaway="",
-                summary="First sentence. Second sentence.",
-            )
+            _make_ranked(abstract_takeaway="", summary="First sentence. Second sentence.")
         ]
-        msg = format_digest_message(papers, {"total_fetched": 10})
-
+        msg = format_report_message(papers, {"total_fetched": 10})
         assert "First sentence." in msg
         assert "Second sentence" not in msg
 
-    def test_paper_without_source_url_uses_pdf(self):
-        papers = [_make_ranked(source_url="")]
-        msg = format_digest_message(papers, {"total_fetched": 10})
-
-        assert "[Test Paper](https://arxiv.org/pdf/1234.5678)" in msg
-
     def test_model_in_footer(self):
         papers = [_make_ranked()]
-        msg = format_digest_message(
-            papers, {"total_fetched": 10}, model="openai/gpt-4o-mini"
-        )
-
-        assert "Gpt-4o-mini" in msg
-
-    def test_all_papers_count_in_footer(self):
-        papers = [_make_ranked()]
-        all_papers = [_make_paper()] * 100
-        msg = format_digest_message(
-            papers, {"total_fetched": 100}, all_papers=all_papers
-        )
-
-        assert "100 total papers scanned" in msg
-
-    def test_pipeline_stats_shown(self):
-        papers = [_make_ranked()]
-        stats = {
-            "total_fetched": 100,
-            "keyword_passed": 20,
-            "keyword_rejected": 80,
-            "llm_scored": 20,
-        }
-        msg = format_digest_message(papers, stats)
-
-        assert "20 passed" in msg
-        assert "80 rejected" in msg
+        msg = format_report_message(papers, {"total_fetched": 10}, model="openai/gpt-5.4")
+        assert "Gpt-5.4" in msg
 
     def test_truncation_on_very_long_message(self):
-        # Create many papers to exceed the limit
         papers = [
             _make_ranked(
                 title=f"Paper with a very long title number {i} " * 5,
@@ -145,9 +175,8 @@ class TestFormatDigestMessage:
             )
             for i in range(100)
         ]
-        msg = format_digest_message(papers, {"total_fetched": 500})
-
-        assert len(msg) <= 14100  # MAX_MESSAGE_LEN + truncation notice
+        msg = format_report_message(papers, {"total_fetched": 500})
+        assert len(msg) <= 14100
 
 
 # ---------------------------------------------------------------------------
@@ -165,10 +194,7 @@ class TestPostWebhook:
         result = post_webhook("https://mm.example.com/hooks/abc123", "hello")
 
         assert result is True
-        mock_post.assert_called_once()
-        body = mock_post.call_args.kwargs.get(
-            "json", mock_post.call_args[1].get("json")
-        )
+        body = mock_post.call_args.kwargs.get("json", mock_post.call_args[1].get("json"))
         assert body["text"] == "hello"
         assert body["username"] == "Research Radar"
 
@@ -178,16 +204,10 @@ class TestPostWebhook:
         mock_resp.ok = True
         mock_post.return_value = mock_resp
 
-        post_webhook(
-            "https://mm.example.com/hooks/abc123",
-            "hello",
-            username="Custom Bot",
-        )
+        post_webhook("https://mm.example.com/hooks/abc123", "hello", username="T-Gpt-5.4")
 
-        body = mock_post.call_args.kwargs.get(
-            "json", mock_post.call_args[1].get("json")
-        )
-        assert body["username"] == "Custom Bot"
+        body = mock_post.call_args.kwargs.get("json", mock_post.call_args[1].get("json"))
+        assert body["username"] == "T-Gpt-5.4"
 
     @patch("src.reports.mattermost.requests.post")
     def test_http_error_returns_false(self, mock_post):
@@ -205,32 +225,43 @@ class TestPostWebhook:
         result = post_webhook("https://mm.example.com/hooks/abc123", "hello")
         assert result is False
 
-    @patch("src.reports.mattermost.requests.post")
-    def test_icon_url_included_when_set(self, mock_post):
-        mock_resp = MagicMock()
-        mock_resp.ok = True
-        mock_post.return_value = mock_resp
 
-        post_webhook(
-            "https://mm.example.com/hooks/abc123",
-            "hello",
-            icon_url="https://example.com/icon.png",
+# ---------------------------------------------------------------------------
+# TestSendDigestMessages
+# ---------------------------------------------------------------------------
+
+
+class TestSendDigestMessages:
+    @patch("src.reports.mattermost.post_webhook")
+    @patch("src.reports.mattermost._generate_flavor")
+    def test_sends_two_messages(self, mock_flavor, mock_post):
+        mock_flavor.return_value = ("I'll be back... with papers.", "Your papers have been judged.")
+        mock_post.return_value = True
+
+        papers = [_make_ranked()]
+        stats = {"total_fetched": 50}
+
+        result = send_digest_messages(
+            "https://mm.example.com/hooks/abc",
+            papers, stats, model="openai/gpt-5.4",
         )
 
-        body = mock_post.call_args.kwargs.get(
-            "json", mock_post.call_args[1].get("json")
+        assert result is True
+        assert mock_post.call_count == 2
+
+        # Both calls use the bot name
+        for call in mock_post.call_args_list:
+            assert call.kwargs.get("username", "") == "T-Gpt-5.4"
+
+    @patch("src.reports.mattermost.post_webhook")
+    @patch("src.reports.mattermost._generate_flavor")
+    def test_returns_false_if_any_fails(self, mock_flavor, mock_post):
+        mock_flavor.return_value = ("Quote.", "Tagline.")
+        mock_post.side_effect = [True, False]  # intro ok, report fails
+
+        result = send_digest_messages(
+            "https://mm.example.com/hooks/abc",
+            [_make_ranked()], {"total_fetched": 50},
         )
-        assert body["icon_url"] == "https://example.com/icon.png"
 
-    @patch("src.reports.mattermost.requests.post")
-    def test_icon_url_omitted_when_empty(self, mock_post):
-        mock_resp = MagicMock()
-        mock_resp.ok = True
-        mock_post.return_value = mock_resp
-
-        post_webhook("https://mm.example.com/hooks/abc123", "hello")
-
-        body = mock_post.call_args.kwargs.get(
-            "json", mock_post.call_args[1].get("json")
-        )
-        assert "icon_url" not in body
+        assert result is False

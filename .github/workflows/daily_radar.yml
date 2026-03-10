@@ -5,7 +5,6 @@ on:
     # Run Mon-Fri at 02:00 UTC (~1-2 hours after arXiv announcements at ~00:00 UTC)
     # arXiv announces Sun-Thu evenings at 20:00 ET (00:00-01:00 UTC next day).
     # Monday's run catches Sunday evening's announcement (Thu-Fri submissions + weekend backlog).
-    # Monday also naturally picks up weekend INSPIRE papers via "most recent N" fetch.
     - cron: "0 2 * * 1-5"
   workflow_dispatch:
     # Manual trigger for testing — can run anytime

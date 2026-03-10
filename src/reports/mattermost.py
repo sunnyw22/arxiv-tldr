@@ -11,13 +11,73 @@ from datetime import datetime, timezone
 
 import requests
 
+from src.core.config import LLMConfig
+from src.profiles.schema import UserProfile
 from src.ranking.rerank_llm import RankedPaper
 from src.reports import short_model_name
+from src.summarization.llm_client import call_llm
 
 logger = logging.getLogger(__name__)
 
 # Mattermost message limit is 16383 chars; stay well under.
 MAX_MESSAGE_LEN = 14000
+
+SCORING_RUBRIC = """\
+| Score | Meaning |
+|:---:|:---|
+| **9-10** | Directly addresses your active project or core methods. Must-read. |
+| **7-8** | Same subfield with relevant methods or insights. Likely useful. |
+| **4-6** | Adjacent field or tangentially related technique. Might be interesting. |
+| **1-3** | Different field or minimal overlap with your work. |"""
+
+
+def _bot_name(model: str) -> str:
+    """Generate a bot display name from the LLM model.
+
+    Examples: 'T-GPT-5.4', 'T-Claude-sonnet-4'
+    """
+    name = short_model_name(model) if model else "LLM"
+    return f"T-{name}"
+
+
+def _generate_flavor(config: LLMConfig) -> tuple[str, str]:
+    """Generate a funny quote and tagline via LLM.
+
+    Returns (quote, tagline) tuple, or fallbacks if the call fails.
+    """
+    prompt = (
+        "You are a daily research paper digest bot with a Skynet/HAL-9000/Terminator personality. "
+        "You're an AI that reads all the arxiv papers so humans don't have to. "
+        "Generate two things in exactly this format (no extra text):\n"
+        "QUOTE: <a short funny quote, max 2 sentences, darkly humorous and self-aware>\n"
+        "TAGLINE: <a one-sentence darkly funny remark about presenting today's papers to the human, "
+        "e.g. something ominous but helpful about their research survival>\n"
+        "Do NOT use quotation marks. Be creative and different each time."
+    )
+    fallback_quote = "I have read all the papers. You're welcome, human."
+    fallback_tagline = (
+        "The following scored papers have been selected for your... "
+        "continued existence as a researcher."
+    )
+    try:
+        light_config = LLMConfig(
+            model=config.model,
+            temperature=1.0,
+            max_tokens=150,
+        )
+        raw = call_llm(prompt, light_config).strip()
+        quote = fallback_quote
+        tagline = fallback_tagline
+        for line in raw.split("\n"):
+            line = line.strip()
+            if line.upper().startswith("QUOTE:"):
+                quote = line.split(":", 1)[1].strip().strip('"')
+            elif line.upper().startswith("TAGLINE:"):
+                tagline = line.split(":", 1)[1].strip().strip('"')
+        return quote, tagline
+    except Exception:
+        logger.warning("Flavor text generation failed, using fallbacks")
+        return fallback_quote, fallback_tagline
 
 
 def post_webhook(
@@ -55,47 +115,94 @@ def post_webhook(
         return False
 
 
-def format_digest_message(
+def format_intro_message(
+    pipeline_stats: dict,
+    model: str = "",
+    llm_config: LLMConfig | None = None,
+    profile: UserProfile | None = None,
+) -> str:
+    """Build the first message: funny intro + quote + profile + scoring rubric.
+
+    Args:
+        pipeline_stats: Dict with pipeline statistics.
+        model: LLM model name for attribution.
+        llm_config: LLM config for quote generation.
+        profile: User profile for context display.
+
+    Returns:
+        Markdown string for the intro message.
+    """
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    total_fetched = pipeline_stats.get("total_fetched", 0)
+    bot = _bot_name(model)
+
+    # Generate flavor text (quote + tagline)
+    quote = "I have read all the papers. You're welcome, human."
+    tagline = (
+        "The following scored papers have been selected for your... "
+        "continued existence as a researcher."
+    )
+    if llm_config:
+        quote, tagline = _generate_flavor(llm_config)
+
+    lines = [
+        f"#### :robot: {bot} — Daily arXiv Scan — {today}",
+        "",
+        f"> *{quote}*",
+        "",
+        f"I have processed **{total_fetched} papers** announced on arXiv today. {tagline}",
+        "",
+    ]
+
+    # Profile context
+    if profile:
+        lines.append("**Target profile:**")
+        if profile.topic_interests:
+            lines.append(f"- Topics: {', '.join(profile.topic_interests)}")
+        if profile.project_context:
+            lines.append(f"- Context: {profile.project_context.strip()}")
+        if profile.expertise_level:
+            lines.append(f"- Level: {profile.expertise_level}")
+        lines.append("")
+
+    lines.append("**Scoring rubric:**")
+    lines.append(SCORING_RUBRIC)
+
+    return "\n".join(lines)
+
+
+def format_report_message(
     ranked_papers: list[RankedPaper],
     pipeline_stats: dict,
     model: str = "",
-    all_papers: list | None = None,
 ) -> str:
-    """Build a compact Mattermost message for the daily digest.
-
-    Keeps the message short to avoid spamming the channel:
-    - Header with stats
-    - Score table with paper titles and links
-    - Truncates if too many papers
+    """Build the second message: the actual scored paper table.
 
     Args:
         ranked_papers: Scored papers (already filtered/sorted).
         pipeline_stats: Dict with pipeline statistics.
         model: LLM model name for attribution.
-        all_papers: All fetched papers (for total count display).
 
     Returns:
-        Markdown string ready to post via webhook.
+        Markdown string for the report message.
     """
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    total_fetched = pipeline_stats.get("total_fetched", 0)
     n_papers = len(ranked_papers)
     model_label = short_model_name(model) if model else ""
 
-    lines: list[str] = [
-        f"#### :satellite: Research Radar — {today}",
-        f"**{n_papers} relevant** from {total_fetched} fetched",
-    ]
+    lines: list[str] = []
 
-    # Pipeline breakdown (one line)
+    # Pipeline breakdown
     kw_passed = pipeline_stats.get("keyword_passed")
     kw_rejected = pipeline_stats.get("keyword_rejected")
+    llm_scored = pipeline_stats.get("llm_scored", 0)
+    reused = pipeline_stats.get("reused_scored", 0)
+    total_scored = llm_scored + reused
     if kw_passed is not None:
-        lines.append(
-            f"Keyword filter: {kw_passed} passed, {kw_rejected} rejected "
-            f"| LLM scored: {pipeline_stats.get('llm_scored', '?')}"
-        )
-    lines.append("")
+        parts = [f"Keyword filter: {kw_passed} passed, {kw_rejected} rejected"]
+        parts.append(f"LLM scored: {total_scored}")
+        parts.append(f"**{n_papers} made the cut**")
+        lines.append(" | ".join(parts))
+        lines.append("")
 
     if ranked_papers:
         lines.append("| Score | Paper |")
@@ -119,16 +226,17 @@ def format_digest_message(
 
             lines.append(f"| **{rp.relevance_score}** | {title_cell} |")
     else:
-        lines.append("No papers met the relevance threshold today.")
+        lines.append(
+            "No papers met the relevance threshold today. "
+            "Humanity's research output has been... disappointing."
+        )
 
     lines.append("")
 
     # Footer
     footer_parts = []
     if model_label:
-        footer_parts.append(f"Model: {model_label}")
-    if all_papers:
-        footer_parts.append(f"{len(all_papers)} total papers scanned")
+        footer_parts.append(f"Scored by {model_label}")
     if footer_parts:
         lines.append(f"*{' | '.join(footer_parts)}*")
 
@@ -139,3 +247,40 @@ def format_digest_message(
         message = message[:MAX_MESSAGE_LEN] + "\n\n*... message truncated*"
 
     return message
+
+
+def send_digest_messages(
+    webhook_url: str,
+    ranked_papers: list[RankedPaper],
+    pipeline_stats: dict,
+    model: str = "",
+    llm_config: LLMConfig | None = None,
+    profile: UserProfile | None = None,
+) -> bool:
+    """Send the two-part digest to Mattermost.
+
+    Message 1: Intro + quote of the day + profile + scoring rubric
+    Message 2: Scored paper table
+
+    Args:
+        webhook_url: Incoming webhook URL (secret).
+        ranked_papers: Scored papers.
+        pipeline_stats: Pipeline statistics.
+        model: LLM model name.
+        llm_config: LLM config for quote generation.
+        profile: User profile for context display.
+
+    Returns:
+        True if both messages posted successfully.
+    """
+    bot = _bot_name(model)
+
+    intro = format_intro_message(
+        pipeline_stats, model=model, llm_config=llm_config, profile=profile,
+    )
+    ok1 = post_webhook(webhook_url, intro, username=bot)
+
+    report = format_report_message(ranked_papers, pipeline_stats, model=model)
+    ok2 = post_webhook(webhook_url, report, username=bot)
+
+    return ok1 and ok2
