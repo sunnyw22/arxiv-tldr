@@ -20,6 +20,7 @@ from src.ranking.synonym import expand_keywords, expand_keywords_interactive
 from src.reports import timestamped_filename
 from src.reports.html import generate_html_report
 from src.reports.markdown import generate_markdown_report
+from src.reports.mattermost import format_summary, send_digest
 from src.sources.arxiv_api import ArxivAPI
 from src.sources.inspire import InspireAPI
 from src.storage.sqlite import (
@@ -35,12 +36,14 @@ from src.summarization.llm_client import reset_token_usage, token_usage
 
 
 def profile_hash(profile: UserProfile) -> str:
-    """Deterministic hash of profile fields that affect ranking."""
+    """Deterministic hash of profile fields that affect ranking.
+
+    Includes topic_interests and expertise_level which directly affect LLM
+    scoring. Excludes project_context so that context_file changes don't
+    invalidate the score cache (context is supplementary, not a ranking signal).
+    """
     key_fields = {
         "topic_interests": sorted(profile.topic_interests),
-        "required_signals": sorted(profile.required_signals),
-        "negative_filters": sorted(profile.negative_filters),
-        "project_context": profile.project_context.strip(),
         "expertise_level": profile.expertise_level.strip(),
     }
     raw = json.dumps(key_fields, sort_keys=True)
@@ -192,6 +195,9 @@ def run_daily_digest(
         expanded_keywords=expanded_keywords,
         pipeline_stats=pipeline_stats,
     )
+
+    # --- 9. Mattermost delivery (optional) ---
+    _maybe_send_mattermost(config, all_ranked, pipeline_stats, md_path, html_path)
 
     conn.close()
 
@@ -537,3 +543,36 @@ def _generate_reports(
         print(f"HTML report: {html_path}")
 
     return md_path, html_path
+
+
+def _maybe_send_mattermost(
+    config: AppConfig,
+    ranked_papers: list,
+    pipeline_stats: dict,
+    md_path: str | None,
+    html_path: str | None,
+) -> None:
+    """Post digest to Mattermost if configured. Never raises."""
+    import os
+
+    mm_url = config.output.mattermost_url
+    mm_channel = config.output.mattermost_channel_id
+    mm_token = os.environ.get("MATTERMOST_TOKEN", "")
+
+    if not (mm_url and mm_channel and mm_token):
+        return
+
+    summary = format_summary(ranked_papers, pipeline_stats)
+
+    # Prefer HTML report, fall back to markdown
+    report_path = html_path or md_path
+    if report_path:
+        ok = send_digest(mm_url, mm_token, mm_channel, report_path, summary)
+    else:
+        from src.reports.mattermost import create_post
+        ok = create_post(mm_url, mm_token, mm_channel, summary)
+
+    if ok:
+        print("Mattermost digest posted successfully")
+    else:
+        print("Warning: Mattermost delivery failed")

@@ -242,6 +242,51 @@ The workflow supports optional date filtering via the manual trigger:
 - **since** — only include papers from this date (YYYY-MM-DD)
 - **until** — only include papers until this date (YYYY-MM-DD)
 
+## Mattermost Bot Integration
+
+Research Radar can post digest summaries and attach report files to a Mattermost channel via a bot account.
+
+### Bot Setup (Mattermost Admin)
+
+1. **Create a bot account**: Go to **Product menu → Integrations → Bot Accounts → Add Bot Account**
+2. Set username (e.g. `research-radar`), optionally add an icon
+3. Select **"Post to all Mattermost channels"** permission
+4. Click **Create Bot Account** and **copy the token immediately** (it's shown once and can't be retrieved later)
+5. **Add the bot to your target channel**: Open the channel → channel dropdown → **Invite People → Invite Member** → search for the bot username
+6. **Get the channel ID**: Open the channel → click the channel name → **View Info** → copy the ID shown at the bottom
+
+### Research Radar Config
+
+Add to your `config/config.yaml`:
+
+```yaml
+output:
+  mattermost_url: "https://mattermost.yourorg.com"
+  mattermost_channel_id: "your-channel-id-here"
+```
+
+Set the bot token as an environment variable (never in config files):
+
+```bash
+# In .env (local)
+MATTERMOST_TOKEN=your-bot-token-here
+
+# In GitHub Actions (Settings → Secrets)
+# Add MATTERMOST_TOKEN as a repository secret
+```
+
+### What Gets Posted
+
+- A compact **scored table** in the channel (title + score + one-liner per paper)
+- The full **report file** (HTML or Markdown) attached to the message
+- If file upload fails, the summary is posted without attachment
+
+### Requirements
+
+- Bot must be a **channel member** (required for file uploads)
+- Bot needs `post:all` permission (no system admin required)
+- `MATTERMOST_TOKEN` env var must be set — if missing, Mattermost delivery is silently skipped
+
 ## Project Structure
 
 ```
