@@ -194,6 +194,7 @@ def run_daily_digest(
         all_ranked, config, total_fetched,
         expanded_keywords=expanded_keywords,
         pipeline_stats=pipeline_stats,
+        all_papers=unique,
     )
 
     # --- 9. Mattermost delivery (optional) ---
@@ -262,10 +263,14 @@ def _fetch_papers(
         try:
             arxiv = ArxivAPI()
             # arXiv API doesn't support date filtering, so over-fetch and
-            # filter client-side. Use max_results as the fetch cap.
+            # filter client-side. Scale fetch cap by number of categories.
+            categories = config.sources.arxiv.categories
+            max_results = config.sources.arxiv.max_results
+            if max_results == 50 and len(categories) > 1:
+                max_results = len(categories) * 50
             arxiv_papers = arxiv.fetch(
-                categories=config.sources.arxiv.categories,
-                max_results=config.sources.arxiv.max_results,
+                categories=categories,
+                max_results=max_results,
             )
             # Client-side date filter
             arxiv_papers = _filter_by_date(arxiv_papers, since_date, until_date)
@@ -500,6 +505,7 @@ def _generate_reports(
     total_fetched: int,
     expanded_keywords: list[str] | None = None,
     pipeline_stats: dict | None = None,
+    all_papers: list | None = None,
 ) -> tuple[str | None, str | None]:
     """Generate report files and return their paths."""
     output_dir = Path(config.output.output_dir)
@@ -520,6 +526,7 @@ def _generate_reports(
             model=config.llm.model,
             expanded_keywords=expanded_keywords or [],
             pipeline_stats=pipeline_stats or {},
+            all_papers=all_papers or [],
         )
         with open(md_path, "w") as f:
             f.write(md)
@@ -537,6 +544,7 @@ def _generate_reports(
             model=config.llm.model,
             expanded_keywords=expanded_keywords or [],
             pipeline_stats=pipeline_stats or {},
+            all_papers=all_papers or [],
         )
         with open(html_path, "w") as f:
             f.write(html)

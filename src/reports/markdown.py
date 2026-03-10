@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from src.core.config import SourcesConfig
+from src.core.models import Paper
 from src.profiles.schema import UserProfile
 from src.ranking.rerank_llm import RankedPaper
 from src.reports import short_model_name
@@ -71,6 +72,7 @@ def generate_markdown_report(
     title: str = "Research Radar Digest",
     expanded_keywords: list[str] | None = None,
     pipeline_stats: dict | None = None,
+    all_papers: list[Paper] | None = None,
 ) -> str:
     """Generate a markdown digest from ranked papers."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -226,6 +228,21 @@ def generate_markdown_report(
             lines.append(f" | [PDF]({paper.pdf_url})")
         lines.append("")
         lines.append("---")
+        lines.append("")
+
+    # All fetched papers (collapsible, no LLM cost)
+    if all_papers:
+        ranked_ids = {rp.paper.source_id for rp in ranked_papers}
+        other_papers = [p for p in all_papers if p.source_id not in ranked_ids]
+        other_papers.sort(key=lambda p: p.submitted_date, reverse=True)
+        lines.append("<details>")
+        lines.append(f"<summary>All fetched papers ({len(all_papers)} total)</summary>")
+        lines.append("")
+        for p in all_papers:
+            marker = " **[ranked]**" if p.source_id in ranked_ids else ""
+            lines.append(f"- [{p.title}]({p.source_url}){marker}")
+        lines.append("")
+        lines.append("</details>")
         lines.append("")
 
     # Footer

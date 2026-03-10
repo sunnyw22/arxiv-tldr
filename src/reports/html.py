@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from src.core.config import SourcesConfig
+from src.core.models import Paper
 from src.profiles.schema import UserProfile
 from src.ranking.rerank_llm import RankedPaper
 from src.reports import short_model_name
@@ -36,6 +37,7 @@ def generate_html_report(
     title: str = "Research Radar Digest",
     expanded_keywords: list[str] | None = None,
     pipeline_stats: dict | None = None,
+    all_papers: list[Paper] | None = None,
 ) -> str:
     """Generate an HTML digest from ranked papers."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -222,6 +224,24 @@ def generate_html_report(
             </div>
             <p class="authors">{author_str}</p>{abstract_html}{trust_html}
             <p class="links">{links}</p>
+        </div>
+        """
+
+    # All fetched papers (collapsible, no LLM cost)
+    all_papers_html = ""
+    if all_papers:
+        ranked_ids = {rp.paper.source_id for rp in ranked_papers}
+        items = ""
+        for p in all_papers:
+            paper_title = _escape(p.title)
+            marker = ' <span class="ranked-badge">ranked</span>' if p.source_id in ranked_ids else ""
+            items += f'<li><a href="{p.source_url}">{paper_title}</a>{marker}</li>\n'
+        all_papers_html = f"""
+        <div class="section">
+            <details>
+                <summary><h2 style="display:inline;cursor:pointer">All fetched papers ({len(all_papers)})</h2></summary>
+                <ul class="all-papers-list">{items}</ul>
+            </details>
         </div>
         """
 
@@ -425,6 +445,32 @@ def generate_html_report(
             font-weight: bold;
             border-radius: 4px;
         }}
+        .all-papers-list {{
+            max-height: 400px;
+            overflow-y: auto;
+            padding-left: 20px;
+        }}
+        .all-papers-list li {{
+            margin-bottom: 4px;
+            font-size: 0.88em;
+            line-height: 1.5;
+        }}
+        .all-papers-list a {{
+            color: #0066cc;
+            text-decoration: none;
+        }}
+        .all-papers-list a:hover {{
+            text-decoration: underline;
+        }}
+        .ranked-badge {{
+            background: #2d8a4e;
+            color: white;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 0.75em;
+            font-weight: bold;
+            margin-left: 4px;
+        }}
         .footer {{
             color: #999;
             font-size: 0.8em;
@@ -454,6 +500,7 @@ def generate_html_report(
     {rubric_html}
     {no_papers}
     {papers_html}
+    {all_papers_html}
     {footer}
 </body>
 </html>"""

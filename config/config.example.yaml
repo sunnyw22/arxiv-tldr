@@ -1,5 +1,6 @@
 # Research Radar — Example Configuration
 # Copy this file to config.yaml and customize for your research profile.
+# This config is also used by the GitHub Actions daily radar workflow.
 
 # --- User Profile ---
 # Describes what you care about (generic, not tied to any specific source)
@@ -7,25 +8,30 @@ profile:
   # Specific topic interests (used for relevance scoring)
   topic_interests:
     - "machine learning"
-    - "particle tracking"
-    - "graph neural networks"
-    - "detector reconstruction"
+    - "deep learning"
+    - "particle physics"
+    - "particle reconstruction"
+    - "track reconstruction"
+    - "vertex reconstruction"
+    - "tagging"
+    - "triggers"
+    - "CERN"
+    - "ATLAS"
+    - "CMS"
 
   # Keywords or phrases that boost relevance — specific terms central to your work
-  required_signals:
-    - "ATLAS"
-    - "tracking efficiency"
-    - "GNN"
+  required_signals: []
 
   # Keywords or phrases that reduce relevance (papers matching these are deprioritized)
   negative_filters:
     - "survey only"
-    - "review article"
+    - "workshop abstract"
 
   # Short description of your current research focus (helps LLM-based ranking)
   project_context: >
-    Applying machine learning methods, especially graph neural networks,
-    to charged particle tracking and detector reconstruction in ATLAS.
+    Implementing machine learning techniques for particle tracking and
+    reconstruction in particle physics collider experiments related to
+    CERN or future colliders.
 
   # Your expertise level: beginner, intermediate, advanced, expert
   expertise_level: "advanced"
@@ -36,24 +42,25 @@ sources:
   arxiv:
     enabled: true
     # arXiv categories to monitor
+    # max_results auto-scales to categories × 50 when not set
     categories:
       - "hep-ex"
       - "hep-ph"
+      - "stat.ML"
       - "cs.LG"
-      - "physics.data-an"
-      - "physics.ins-det"
+      - "cs.AI"
 
   inspire:
     enabled: true
     # INSPIRE keyword searches
     keywords:
       - "tracking"
+      - "tagging"
+      - "particle reconstruction"
       - "machine learning"
-      - "graph neural network"
     # INSPIRE subject categories (optional)
     subject_codes:
       - "Experiment-HEP"
-      - "Computing"
 
 # --- Summary Preferences ---
 summary:
@@ -61,7 +68,7 @@ summary:
   style: "concise"
 
   # Maximum number of papers in the daily digest
-  max_papers: 15
+  max_papers: 10
 
   # Minimum relevance score to include in digest (1-10, default: 4)
   min_score: 4
@@ -86,7 +93,7 @@ output:
 # --- LLM Provider ---
 llm:
   # Provider and model (via litellm format)
-  model: "openai/gpt-4o-mini"
+  model: "openai/gpt-5.4"
 
   # Temperature for summarization
   temperature: 0.3
