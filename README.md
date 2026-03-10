@@ -1,6 +1,6 @@
 # Research Radar
 
-Personalized paper discovery and screening for researchers. Monitors arXiv and INSPIRE-HEP, ranks papers against your research profile using LLM-powered relevance scoring, and delivers evidence-backed daily digests.
+Personalized paper discovery and screening for researchers. Monitors arXiv (API + RSS) and INSPIRE-HEP, ranks papers against your research profile using LLM-powered relevance scoring, and delivers evidence-backed daily digests — locally or via GitHub Actions with optional Mattermost notifications.
 
 ## Quick Start
 
@@ -31,8 +31,8 @@ Reports are saved to `output/` as both Markdown and HTML.
 ```
 ┌─────────────┐     ┌─────────────┐     ┌──────────────┐     ┌─────────────┐
 │  Your Config │────▶│ Fetch Papers │────▶│  Deduplicate  │────▶│  Expand     │
-│  (profile +  │     │ (arXiv +     │     │ (4-tier cross │     │  Keywords   │
-│   sources)   │     │  INSPIRE)    │     │  source+DB)   │     │  (LLM call) │
+│  (profile +  │     │ (arXiv RSS/  │     │ (4-tier cross │     │  Keywords   │
+│   sources)   │     │  API+INSPIRE)│     │  source+DB)   │     │  (LLM call) │
 └─────────────┘     └─────────────┘     └──────────────┘     └──────┬──────┘
                                                                      │
                     ┌─────────────┐     ┌──────────────┐     ┌──────▼──────┐
@@ -48,7 +48,7 @@ Reports are saved to `output/` as both Markdown and HTML.
                     └─────────────┘
 ```
 
-1. **Fetch** — Papers are pulled from arXiv API and INSPIRE-HEP based on your configured categories and keywords.
+1. **Fetch** — Papers are pulled from arXiv (RSS for CI/today-only, API for local with date filtering) and optionally INSPIRE-HEP. `max_results` auto-scales by category count (categories × 50).
 2. **Deduplicate** — 4-tier dedup: arXiv ID → DOI → source ID → normalized title+first author+year. Also deduplicates against previously seen papers in the local SQLite database.
 3. **Expand keywords** — An LLM call expands your topic interests into related terms (synonyms, abbreviations, adjacent concepts).
 4. **Pre-sort** — Expanded keywords are matched against titles and abstracts to select the top candidates. This keeps LLM costs low by filtering before the expensive ranking step.
@@ -77,6 +77,7 @@ Each report includes:
   - "From the paper" — factual summary grounded in the abstract (problem, technique, results)
   - "Model Name - Assessment" — why this paper matters to your specific research
   - Links to paper and PDF
+- **All fetched papers** — collapsible list of every paper retrieved, with links (zero LLM cost). Ranked papers are tagged.
 
 See `output_sample/` for example reports.
 
@@ -99,11 +100,15 @@ python -m src.cli digest --skip-validation
 
 # Non-interactive mode (skip keyword review — use for CI/headless runs)
 python -m src.cli digest --no-interactive
+
+# Use arXiv RSS feed (today's announcements only — ideal for CI)
+python -m src.cli digest --use-rss --no-interactive
 ```
 
 **Fetch modes:**
 - **Daily radar** (default): First run fetches the last 7 days. Subsequent runs pick up from the last checkpoint automatically.
 - **Active search** (`--since`/`--until`): Fetches the specified window, ignores checkpoints, and does not update them.
+- **RSS mode** (`--use-rss`): Fetches only today's arXiv announcements via RSS. No date filtering or checkpoints needed. Used in the GitHub Actions workflow.
 
 ### `setup` — Interactive config wizard
 
@@ -154,10 +159,10 @@ profile:
 sources:
   arxiv:
     enabled: true
-    categories: ["hep-ex", "cs.LG"]   # arXiv categories to monitor
-    max_results: 50                     # Safety cap for API fetch
+    categories: ["hep-ex", "hep-ph", "cs.LG", "cs.AI", "physics.data-an"]
+    max_results: 50            # Auto-scales: categories × 50 when default
   inspire:
-    enabled: true
+    enabled: false             # Most papers already on arXiv
     keywords: ["tracking", "machine learning"]
     subject_codes: ["Experiment-HEP"]
     max_results: 50
@@ -174,7 +179,7 @@ output:
 
 # LLM provider (any litellm-supported model)
 llm:
-  model: "openai/gpt-4o-mini"   # See "API Keys" and "Cost" sections
+  model: "openai/gpt-5.4"     # See "API Keys" and "Cost" sections
   temperature: 0.3
   max_tokens: 4096
 ```
@@ -209,13 +214,14 @@ Research Radar uses [litellm](https://docs.litellm.ai/) for LLM abstraction. Any
 
 ## Cost
 
-Typical costs per digest run (50 papers fetched, ~15 shown):
+Typical costs per digest run (~250 papers fetched via 5 categories, ~15 shown):
 
 | Model | Cost/run | Notes |
 |-------|----------|-------|
-| GPT-4o-mini | ~$0.001 | Default. Good quality, very cheap. |
+| GPT-5.4 | ~$0.01–0.02 | Default. Best quality-to-cost ratio. |
+| GPT-4o-mini | ~$0.001 | Budget option, good quality. |
 | Gemini Flash | Free | Free tier via Google AI Studio. |
-| Claude Sonnet | ~$0.15–0.20 | Best reasoning quality. |
+| Claude Sonnet | ~$0.15–0.20 | Strong reasoning quality. |
 
 ## GitHub Actions (Automated Daily Digest)
 
@@ -226,15 +232,17 @@ The repo includes a GitHub Actions workflow that runs the digest automatically o
 - **Runs Mon–Fri at 02:00 UTC** (~1–2 hours after arXiv announcements)
 - arXiv announces new papers Sun–Thu evenings at 20:00 ET (00:00–01:00 UTC next day)
 - Monday's run catches Sunday evening's announcement (Thu–Fri submissions + weekend backlog)
-- Each scheduled run picks up from the last checkpoint automatically (no gaps, no duplicates)
+- Uses `--use-rss` to fetch only today's announcements (no checkpoints needed in CI)
 
 ### Setup (for forks)
 
 1. Fork the repository
-2. Add `OPENAI_API_KEY` as a repository secret (Settings → Secrets and variables → Actions)
+2. Add repository secrets (Settings → Secrets and variables → Actions):
+   - `OPENAI_API_KEY` — required
+   - `MATTERMOST_WEBHOOK_URL` — optional, for channel notifications
 3. Edit `config/config.example.yaml` with your research interests (the workflow copies it to `config.yaml`)
 4. The workflow runs automatically, or trigger manually via Actions → Daily Radar → "Run workflow"
-5. Download digest reports from the workflow's Artifacts section
+5. Download digest reports from the workflow's Artifacts section (always uploaded, regardless of Mattermost)
 
 ### Manual trigger
 
@@ -268,9 +276,12 @@ No config file changes needed — the webhook URL encodes the channel.
 
 ### What Gets Posted
 
-- A compact **scored table** (title + score + one-liner per paper)
-- Pipeline stats (papers fetched, keyword filtered, LLM scored)
-- Links to each paper on arXiv
+Two messages are sent per digest:
+
+1. **Intro message** — LLM-generated quote (Skynet/HAL-9000 personality), your profile summary, scoring rubric
+2. **Report message** — Pipeline stats, scored paper table with one-line takeaways and arXiv links
+
+The bot name is derived from the LLM model (e.g., "T-Gpt-5.4").
 
 ### Security
 
@@ -287,17 +298,18 @@ paper_radar/
   src/
     cli/                  # Command-line interface
     core/                 # Config, models, shared types
-    sources/              # arXiv API, INSPIRE-HEP
+    sources/              # arXiv API, arXiv RSS, INSPIRE-HEP
     profiles/             # User profile schema
     ranking/              # Keyword pre-sort, LLM reranking
     summarization/        # LLM client, prompt templates
-    reports/              # Markdown and HTML report generation
+    reports/              # Markdown, HTML, Mattermost webhook
     storage/              # SQLite persistence and caching
     workflows/            # End-to-end pipeline orchestration
   output/                 # Generated reports (gitignored)
   output_sample/          # Example report outputs
-  data/                   # SQLite database (gitignored)
+  data/
+    schema.sql            # SQLite schema reference
   .github/workflows/
     ci.yml                # Tests + lint on push/PR
-    daily_radar.yml       # Scheduled daily digest (Mon-Fri)
+    daily_radar.yml       # Scheduled daily digest (Mon-Fri, RSS + Mattermost)
 ```
