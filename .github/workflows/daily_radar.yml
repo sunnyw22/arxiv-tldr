@@ -46,7 +46,7 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          ARGS="digest --skip-validation --no-interactive"
+          ARGS="digest --skip-validation --no-interactive --use-rss"
           if [ -n "${{ github.event.inputs.since }}" ]; then
             ARGS="$ARGS --since ${{ github.event.inputs.since }}"
           fi

@@ -22,6 +22,7 @@ from src.reports.html import generate_html_report
 from src.reports.markdown import generate_markdown_report
 from src.reports.mattermost import format_summary, send_digest
 from src.sources.arxiv_api import ArxivAPI
+from src.sources.arxiv_rss import ArxivRSS
 from src.sources.inspire import InspireAPI
 from src.storage.sqlite import (
     get_connection,
@@ -56,6 +57,7 @@ def run_daily_digest(
     since_date: datetime | None = None,
     until_date: datetime | None = None,
     interactive: bool = False,
+    use_rss: bool = False,
 ) -> dict:
     """Run the full daily digest pipeline.
 
@@ -64,6 +66,7 @@ def run_daily_digest(
         db_path: Path to SQLite database.
         since_date: If provided, filter papers with submitted_date >= since_date.
         until_date: If provided, filter papers with submitted_date <= until_date.
+        use_rss: If True, use arXiv RSS feed (today's announcements only) instead of API.
 
     Returns:
         Dict with keys: ranked_papers, md_path, html_path, run_id, stats
@@ -101,7 +104,7 @@ def run_daily_digest(
 
     # --- 1. Fetch papers from sources ---
     all_papers, source_counts = _fetch_papers(
-        config, since_date=fetch_since, until_date=fetch_until,
+        config, since_date=fetch_since, until_date=fetch_until, use_rss=use_rss,
     )
     pipeline_stats["arxiv_fetched"] = source_counts.get("arxiv", 0)
     pipeline_stats["inspire_fetched"] = source_counts.get("inspire", 0)
@@ -244,6 +247,7 @@ def _fetch_papers(
     config: AppConfig,
     since_date: datetime | None = None,
     until_date: datetime | None = None,
+    use_rss: bool = False,
 ) -> tuple[list[Paper], dict[str, int]]:
     """Fetch papers from all enabled sources.
 
@@ -251,6 +255,7 @@ def _fetch_papers(
         config: Application configuration.
         since_date: Only include papers submitted on or after this date.
         until_date: Only include papers submitted on or before this date.
+        use_rss: If True, use arXiv RSS (today's announcements) instead of API.
 
     Returns:
         Tuple of (papers, source_counts) where source_counts maps source name to count.
@@ -259,26 +264,37 @@ def _fetch_papers(
     source_counts: dict[str, int] = {}
 
     if config.sources.arxiv.enabled and config.sources.arxiv.categories:
-        print("Fetching from arXiv API...")
-        try:
-            arxiv = ArxivAPI()
-            # arXiv API doesn't support date filtering, so over-fetch and
-            # filter client-side. Scale fetch cap by number of categories.
-            categories = config.sources.arxiv.categories
-            max_results = config.sources.arxiv.max_results
-            if max_results == 50 and len(categories) > 1:
-                max_results = len(categories) * 50
-            arxiv_papers = arxiv.fetch(
-                categories=categories,
-                max_results=max_results,
-            )
-            # Client-side date filter
-            arxiv_papers = _filter_by_date(arxiv_papers, since_date, until_date)
-            print(f"  arXiv: {len(arxiv_papers)} papers")
-            source_counts["arxiv"] = len(arxiv_papers)
-            papers.extend(arxiv_papers)
-        except Exception as e:
-            print(f"  arXiv fetch failed: {e}")
+        categories = config.sources.arxiv.categories
+        if use_rss:
+            print("Fetching from arXiv RSS (today's announcements)...")
+            try:
+                rss = ArxivRSS()
+                arxiv_papers = rss.fetch(categories=categories)
+                print(f"  arXiv RSS: {len(arxiv_papers)} papers")
+                source_counts["arxiv"] = len(arxiv_papers)
+                papers.extend(arxiv_papers)
+            except Exception as e:
+                print(f"  arXiv RSS fetch failed: {e}")
+        else:
+            print("Fetching from arXiv API...")
+            try:
+                arxiv = ArxivAPI()
+                # arXiv API doesn't support date filtering, so over-fetch and
+                # filter client-side. Scale fetch cap by number of categories.
+                max_results = config.sources.arxiv.max_results
+                if max_results == 50 and len(categories) > 1:
+                    max_results = len(categories) * 50
+                arxiv_papers = arxiv.fetch(
+                    categories=categories,
+                    max_results=max_results,
+                )
+                # Client-side date filter
+                arxiv_papers = _filter_by_date(arxiv_papers, since_date, until_date)
+                print(f"  arXiv: {len(arxiv_papers)} papers")
+                source_counts["arxiv"] = len(arxiv_papers)
+                papers.extend(arxiv_papers)
+            except Exception as e:
+                print(f"  arXiv fetch failed: {e}")
 
     if config.sources.inspire.enabled:
         keywords = config.sources.inspire.keywords

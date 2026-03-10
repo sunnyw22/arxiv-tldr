@@ -59,6 +59,12 @@ def main():
         default=False,
         help="Skip interactive prompts (keyword review, etc). Use for CI/headless runs.",
     )
+    digest_parser.add_argument(
+        "--use-rss",
+        action="store_true",
+        default=False,
+        help="Use arXiv RSS feed instead of API. RSS returns only today's announcements.",
+    )
 
     # --- setup command ---
     setup_parser = subparsers.add_parser(
@@ -156,6 +162,7 @@ def _run_digest(args):
         since_date=since_date,
         until_date=until_date,
         interactive=interactive,
+        use_rss=args.use_rss,
     )
 
     if not result["ranked_papers"]:
