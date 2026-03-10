@@ -93,7 +93,7 @@ class TestFormatIntroMessage:
     def test_contains_quote(self):
         msg = format_intro_message({"total_fetched": 10})
         # Fallback quote when no llm_config
-        assert "read all the papers" in msg
+        assert "You're welcome" in msg
 
     @patch("src.reports.mattermost.call_llm")
     def test_generates_llm_flavor(self, mock_llm):
@@ -116,7 +116,7 @@ class TestFormatIntroMessage:
         msg = format_intro_message(
             {"total_fetched": 10}, llm_config=config
         )
-        assert "read all the papers" in msg
+        assert "You're welcome" in msg
 
 
 # ---------------------------------------------------------------------------
@@ -141,7 +141,7 @@ class TestFormatReportMessage:
 
     def test_empty_papers(self):
         msg = format_report_message([], {"total_fetched": 50})
-        assert "disappointing" in msg
+        assert "impressively high" in msg
 
     def test_table_format(self):
         papers = [_make_ranked(score=8)]

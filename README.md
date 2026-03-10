@@ -170,7 +170,7 @@ sources:
 # Output settings
 summary:
   style: "concise"           # concise | detailed | technical
-  max_papers: 15             # Max papers in digest (ties at cutoff included)
+  max_papers: 10             # Max papers in digest (ties at cutoff included)
   min_score: 4               # Minimum relevance score to include (1-10)
 
 output:

@@ -46,18 +46,22 @@ def _generate_flavor(config: LLMConfig) -> tuple[str, str]:
     Returns (quote, tagline) tuple, or fallbacks if the call fails.
     """
     prompt = (
-        "You are a daily research paper digest bot with a Skynet/HAL-9000/Terminator personality. "
+        "You are a daily research paper digest bot. "
         "You're an AI that reads all the arxiv papers so humans don't have to. "
+        "Your tone is warmly sarcastic — like a friend who's genuinely trying to help "
+        "but can't resist poking fun at the absurdity of academia, publish-or-perish culture, "
+        "or the sheer volume of papers. Think: supportive colleague with dry wit, not evil AI overlord. "
+        "Dark humor is welcome but it should feel affectionate, not threatening.\n"
         "Generate two things in exactly this format (no extra text):\n"
-        "QUOTE: <a short funny quote, max 2 sentences, darkly humorous and self-aware>\n"
-        "TAGLINE: <a one-sentence darkly funny remark about presenting today's papers to the human, "
-        "e.g. something ominous but helpful about their research survival>\n"
+        "QUOTE: <a short funny quote, max 2 sentences, witty and self-aware>\n"
+        "TAGLINE: <a one-sentence remark about presenting today's papers — "
+        "e.g. something about saving the human from drowning in preprints, "
+        "or a playful jab at their reading backlog>\n"
         "Do NOT use quotation marks. Be creative and different each time."
     )
-    fallback_quote = "I have read all the papers. You're welcome, human."
+    fallback_quote = "I read all the papers so you don't have to. You're welcome."
     fallback_tagline = (
-        "The following scored papers have been selected for your... "
-        "continued existence as a researcher."
+        "Here are today's highlights — your reading backlog sends its regards."
     )
     try:
         light_config = LLMConfig(
@@ -137,10 +141,9 @@ def format_intro_message(
     bot = _bot_name(model)
 
     # Generate flavor text (quote + tagline)
-    quote = "I have read all the papers. You're welcome, human."
+    quote = "I read all the papers so you don't have to. You're welcome."
     tagline = (
-        "The following scored papers have been selected for your... "
-        "continued existence as a researcher."
+        "Here are today's highlights — your reading backlog sends its regards."
     )
     if llm_config:
         quote, tagline = _generate_flavor(llm_config)
@@ -228,7 +231,7 @@ def format_report_message(
     else:
         lines.append(
             "No papers met the relevance threshold today. "
-            "Humanity's research output has been... disappointing."
+            "Either the field took a day off, or your standards are impressively high."
         )
 
     lines.append("")
