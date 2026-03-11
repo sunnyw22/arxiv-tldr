@@ -81,11 +81,17 @@ def run_daily_digest(
     }
 
     # --- Determine fetch mode ---
+    # RSS mode: today's announcements only, no checkpoint logic
     # Active search: user provided explicit --since/--until
     # Daily radar: use checkpoint, default to 7 days back on first run
     active_search = since_date is not None or until_date is not None
 
-    if active_search:
+    if use_rss:
+        # RSS returns today's announcements — no date filtering needed
+        fetch_since = None
+        fetch_until = None
+        mode_label = "RSS (today's announcements)"
+    elif active_search:
         fetch_since = since_date
         fetch_until = until_date
         mode_label = "active search"
@@ -112,8 +118,8 @@ def run_daily_digest(
     pipeline_stats["total_fetched"] = total_fetched
     print(f"Fetched {total_fetched} papers from sources")
 
-    # Save source checkpoints (only in daily radar mode)
-    if not active_search:
+    # Save source checkpoints (only in daily radar mode, not RSS or active search)
+    if not active_search and not use_rss:
         now_ts = datetime.now(timezone.utc)
         if source_counts.get("arxiv", 0) > 0:
             save_source_checkpoint(conn, "arxiv", now_ts, source_counts["arxiv"])
@@ -126,9 +132,13 @@ def run_daily_digest(
         return {"ranked_papers": [], "stats": {"total_fetched": 0}}
 
     # Build digest window description
-    since_str = fetch_since.strftime("%Y-%m-%d") if fetch_since else "earliest"
-    until_str = fetch_until.strftime("%Y-%m-%d") if fetch_until else "latest"
-    pipeline_stats["digest_window"] = f"Papers from {since_str} to {until_str}"
+    if use_rss:
+        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        pipeline_stats["digest_window"] = f"arXiv announcements for {today_str}"
+    else:
+        since_str = fetch_since.strftime("%Y-%m-%d") if fetch_since else "earliest"
+        until_str = fetch_until.strftime("%Y-%m-%d") if fetch_until else "latest"
+        pipeline_stats["digest_window"] = f"Papers from {since_str} to {until_str}"
 
     # --- 2. Cross-source dedup ---
     unique = _dedup_papers(all_papers)
