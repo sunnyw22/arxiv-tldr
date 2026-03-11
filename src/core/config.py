@@ -30,7 +30,7 @@ class SourcesConfig:
 @dataclass
 class SummaryConfig:
     style: str = "concise"
-    max_papers: int = 15
+    max_papers: int = 10
     min_score: int = 4
 
 
@@ -48,19 +48,12 @@ class LLMConfig:
 
 
 @dataclass
-class ScheduleConfig:
-    cron: str = "0 8 * * *"
-    timezone: str = "UTC"
-
-
-@dataclass
 class AppConfig:
     profile: UserProfile = field(default_factory=UserProfile)
     sources: SourcesConfig = field(default_factory=SourcesConfig)
     summary: SummaryConfig = field(default_factory=SummaryConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
-    schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
 
 
 def load_config(path: str | Path = "config/config.yaml") -> AppConfig:
@@ -106,7 +99,7 @@ def _parse_config(raw: dict) -> AppConfig:
     summary_raw = raw.get("summary", {})
     summary = SummaryConfig(
         style=summary_raw.get("style", "concise"),
-        max_papers=summary_raw.get("max_papers", 15),
+        max_papers=summary_raw.get("max_papers", 10),
         min_score=summary_raw.get("min_score", 4),
     )
 
@@ -123,17 +116,10 @@ def _parse_config(raw: dict) -> AppConfig:
         max_tokens=llm_raw.get("max_tokens", 4096),
     )
 
-    schedule_raw = raw.get("schedule", {})
-    schedule = ScheduleConfig(
-        cron=schedule_raw.get("cron", "0 8 * * *"),
-        timezone=schedule_raw.get("timezone", "UTC"),
-    )
-
     return AppConfig(
         profile=profile,
         sources=sources,
         summary=summary,
         output=output,
         llm=llm,
-        schedule=schedule,
     )

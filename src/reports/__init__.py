@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+from src.ranking.rerank_llm import RankedPaper
+
 
 def short_model_name(model: str) -> str:
     """Extract short display name from litellm model string.
@@ -23,3 +25,32 @@ def timestamped_filename(prefix: str = "digest", ext: str = "md", model: str = "
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M")
     model_tag = f"_{short_model_name(model).lower()}" if model else ""
     return f"{prefix}{model_tag}_{ts}.{ext}"
+
+
+def source_label(source_type: str) -> str:
+    """Return a human-readable source label for a paper."""
+    if source_type in ("arxiv_api", "arxiv_rss", "arxiv"):
+        return "arXiv"
+    if source_type == "inspire":
+        return "INSPIRE"
+    return source_type
+
+
+def get_date_range(ranked_papers: list[RankedPaper]) -> str:
+    """Get the date range of papers in the results."""
+    if not ranked_papers:
+        return ""
+    dates = [rp.paper.submitted_date for rp in ranked_papers]
+    earliest = min(dates).strftime("%Y-%m-%d")
+    latest = max(dates).strftime("%Y-%m-%d")
+    if earliest == latest:
+        return earliest
+    return f"{earliest} to {latest}"
+
+
+SCORING_RUBRIC = """| Score | Meaning |
+|-------|---------|
+| 9-10 | Directly addresses your active project or core methods. Must-read. |
+| 7-8 | Same subfield with relevant methods or insights. Likely useful. |
+| 4-6 | Adjacent field or tangentially related technique. Might be interesting. |
+| 1-3 | Different field or minimal overlap with your work. |"""

@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import requests
 
@@ -86,7 +86,6 @@ class InspireAPI(BaseSource):
 
         # Restrict to recent papers to avoid surfacing very old results
         if days_back > 0:
-            from datetime import datetime, timedelta, timezone
             since = (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime("%Y-%m-%d")
             conditions.append(f"de >= {since}")
 

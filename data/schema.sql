@@ -1,4 +1,4 @@
--- Research Radar — SQLite Schema
+-- arXiv TL;DR — SQLite Schema
 -- The database (research_radar.db) is auto-created on first run.
 -- This file is for reference only.
 
@@ -38,6 +38,8 @@ CREATE TABLE run_papers (
     FOREIGN KEY (run_id) REFERENCES runs(run_id),
     FOREIGN KEY (source_id) REFERENCES papers(source_id)
 );
+
+CREATE INDEX idx_run_papers_run_id ON run_papers(run_id);
 
 CREATE TABLE source_checkpoints (
     source_name     TEXT PRIMARY KEY,

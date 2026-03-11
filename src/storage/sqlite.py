@@ -67,6 +67,9 @@ def _init_tables(conn: sqlite3.Connection) -> None:
             FOREIGN KEY (source_id) REFERENCES papers(source_id)
         );
 
+        CREATE INDEX IF NOT EXISTS idx_run_papers_run_id
+            ON run_papers(run_id);
+
         CREATE TABLE IF NOT EXISTS source_checkpoints (
             source_name     TEXT PRIMARY KEY,
             last_fetched    TEXT NOT NULL,       -- ISO 8601 timestamp
@@ -235,8 +238,8 @@ def get_run_papers(conn: sqlite3.Connection, run_id: int) -> list[RankedPaper]:
             relevance_score=row["relevance_score"],
             reasoning=row["reasoning"],
             summary=row["summary"],
-            abstract_takeaway=row["abstract_takeaway"] if "abstract_takeaway" in row.keys() else "",
-            why_relevant=row["why_relevant"] if "why_relevant" in row.keys() else "",
+            abstract_takeaway=row["abstract_takeaway"],
+            why_relevant=row["why_relevant"],
         ))
     return results
 

@@ -11,7 +11,7 @@ class TestParseConfig:
     def test_empty_config_returns_defaults(self):
         config = _parse_config({})
         assert config.llm.model == "openai/gpt-4o-mini"
-        assert config.summary.max_papers == 15
+        assert config.summary.max_papers == 10
         assert config.output.formats == ["markdown"]
         assert config.profile.expertise_level == "intermediate"
         assert config.sources.arxiv.enabled is True
@@ -32,7 +32,6 @@ class TestParseConfig:
             "summary": {"style": "detailed", "max_papers": 5},
             "output": {"formats": ["markdown", "html"], "output_dir": "reports/"},
             "llm": {"model": "openai/gpt-4o-mini", "temperature": 0.5, "max_tokens": 2048},
-            "schedule": {"cron": "0 9 * * 1-5", "timezone": "US/Eastern"},
         }
         config = _parse_config(raw)
         assert config.profile.topic_interests == ["ML", "tracking"]
@@ -42,7 +41,6 @@ class TestParseConfig:
         assert config.summary.max_papers == 5
         assert config.output.output_dir == "reports/"
         assert config.llm.model == "openai/gpt-4o-mini"
-        assert config.schedule.timezone == "US/Eastern"
 
     def test_partial_config_fills_defaults(self):
         raw = {"profile": {"topic_interests": ["NLP"]}}

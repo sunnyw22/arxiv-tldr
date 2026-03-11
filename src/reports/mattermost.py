@@ -14,21 +14,13 @@ import requests
 from src.core.config import LLMConfig
 from src.profiles.schema import UserProfile
 from src.ranking.rerank_llm import RankedPaper
-from src.reports import short_model_name
+from src.reports import SCORING_RUBRIC, short_model_name
 from src.summarization.llm_client import call_llm
 
 logger = logging.getLogger(__name__)
 
 # Mattermost message limit is 16383 chars; stay well under.
 MAX_MESSAGE_LEN = 14000
-
-SCORING_RUBRIC = """\
-| Score | Meaning |
-|:---:|:---|
-| **9-10** | Directly addresses your active project or core methods. Must-read. |
-| **7-8** | Same subfield with relevant methods or insights. Likely useful. |
-| **4-6** | Adjacent field or tangentially related technique. Might be interesting. |
-| **1-3** | Different field or minimal overlap with your work. |"""
 
 
 def _bot_name(model: str) -> str:

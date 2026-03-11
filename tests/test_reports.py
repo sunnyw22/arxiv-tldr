@@ -3,10 +3,9 @@
 
 from src.core.config import ArxivSourceConfig, InspireSourceConfig, SourcesConfig
 from src.ranking.rerank_llm import RankedPaper
-from src.reports import timestamped_filename
+from src.reports import get_date_range, timestamped_filename
 from src.reports.html import _escape, _score_color, generate_html_report
 from src.reports.markdown import (
-    _get_date_range,
     _normalize_name,
     format_authors,
     generate_markdown_report,
@@ -51,16 +50,16 @@ class TestNormalizeName:
 
 class TestGetDateRange:
     def test_single_date(self, sample_ranked_paper):
-        result = _get_date_range([sample_ranked_paper])
+        result = get_date_range([sample_ranked_paper])
         assert result == "2026-03-07"
 
     def test_date_range(self, sample_ranked_paper, sample_ranked_paper_2):
-        result = _get_date_range([sample_ranked_paper, sample_ranked_paper_2])
+        result = get_date_range([sample_ranked_paper, sample_ranked_paper_2])
         assert "2026-03-06" in result
         assert "2026-03-07" in result
 
     def test_empty(self):
-        assert _get_date_range([]) == ""
+        assert get_date_range([]) == ""
 
 
 class TestMarkdownReport:

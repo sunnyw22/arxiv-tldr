@@ -98,12 +98,3 @@ llm:
 
   # Maximum tokens per summary
   max_tokens: 4096
-
-# --- Scheduling ---
-schedule:
-  # For GitHub Actions or cron-based runs
-  # Cron expression for daily digest (default: 8am UTC)
-  cron: "0 8 * * *"
-
-  # Timezone for display purposes
-  timezone: "UTC"

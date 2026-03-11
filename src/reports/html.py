@@ -4,18 +4,9 @@ from src.core.config import SourcesConfig
 from src.core.models import Paper
 from src.profiles.schema import UserProfile
 from src.ranking.rerank_llm import RankedPaper
-from src.reports import short_model_name
+from src.reports import get_date_range, short_model_name, source_label
 from src.reports.markdown import format_authors
 from src.summarization.llm_client import TokenUsage
-
-
-def _source_label(source_type: str) -> str:
-    """Return a human-readable source label for a paper."""
-    if source_type in ("arxiv_api", "arxiv_rss", "arxiv"):
-        return "arXiv"
-    if source_type == "inspire":
-        return "INSPIRE"
-    return source_type
 
 
 def _source_badge_color(source_type: str) -> str:
@@ -47,7 +38,7 @@ def generate_html_report(
         pipeline_stats = {}
 
     # Date range from papers
-    date_range = _get_date_range(ranked_papers)
+    date_range = get_date_range(ranked_papers)
 
     # Digest window
     digest_window = pipeline_stats.get("digest_window", "")
@@ -171,7 +162,7 @@ def generate_html_report(
         author_str = _escape(format_authors(paper.authors))
         pub_date = paper.submitted_date.strftime("%Y-%m-%d")
         score_color = _score_color(rp.relevance_score)
-        source_tag = _source_label(paper.source_type)
+        source_tag = source_label(paper.source_type)
         badge_color = _source_badge_color(paper.source_type)
 
         links = f'<a href="{paper.source_url}">Read paper</a>'
@@ -504,18 +495,6 @@ def generate_html_report(
     {footer}
 </body>
 </html>"""
-
-
-def _get_date_range(ranked_papers: list[RankedPaper]) -> str:
-    """Get the date range of papers in the results."""
-    if not ranked_papers:
-        return ""
-    dates = [rp.paper.submitted_date for rp in ranked_papers]
-    earliest = min(dates).strftime("%Y-%m-%d")
-    latest = max(dates).strftime("%Y-%m-%d")
-    if earliest == latest:
-        return earliest
-    return f"{earliest} to {latest}"
 
 
 def _score_color(score: int) -> str:
