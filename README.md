@@ -213,11 +213,13 @@ The repo includes a workflow that runs the digest automatically on weekdays.
 ### Setup (for forks)
 
 1. Fork the repository
-2. Add repository secrets (Settings → Secrets → Actions):
-   - `OPENAI_API_KEY` — required
+2. Edit `config/config.example.yaml` with your research interests and preferred LLM model
+3. Add repository secrets (Settings → Secrets → Actions):
+   - **One LLM API key** matching your config — `OPENAI_API_KEY`, `GEMINI_API_KEY`, or `ANTHROPIC_API_KEY`
    - `MATTERMOST_WEBHOOK_URL` — optional, for channel notifications
-3. Edit `config/config.example.yaml` with your research interests (the workflow copies it to `config.yaml`)
 4. The workflow runs automatically, or trigger manually via Actions → Daily Radar → "Run workflow"
+
+> 💡 The workflow passes all three API key secrets to the environment — only the one matching your `llm.model` in config needs to be set. To switch providers, just update the model in `config.example.yaml` and swap the secret.
 
 The manual trigger supports optional `--since` / `--until` date filtering.
 
@@ -278,7 +280,7 @@ arxiv-tldr/
 
 ## 🔮 Coming Soon
 
-- **Smarter scoring** — binary-first relevance filtering before detailed ranking
+- **Smarter scoring** — binary-first relevance pass before detailed ranking (faster, cheaper)
 - **Rich context files** — point to your own papers/notes for deeper profile matching
-- **"Further reading" links** — related papers and references for top-scored results
-- **Slack integration** — daily digests in Slack channels
+- **"Further reading"** — related papers and references surfaced for top-scored results
+- **Prompt tuning** — improved LLM prompts for sharper summaries and scoring

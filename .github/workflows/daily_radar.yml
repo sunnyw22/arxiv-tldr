@@ -43,7 +43,11 @@ jobs:
 
       - name: Run daily digest
         env:
+          # Set whichever API key matches your llm.model in config.example.yaml.
+          # Only one is needed — add it as a repository secret in Settings → Secrets → Actions.
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
         run: |
           ARGS="digest --skip-validation --no-interactive --use-rss"
