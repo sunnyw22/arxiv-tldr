@@ -273,3 +273,12 @@ arxiv-tldr/
     ci.yml                  # Tests + lint on push/PR
     daily_radar.yml         # Scheduled daily digest
 ```
+
+---
+
+## 🔮 Coming Soon
+
+- **Smarter scoring** — binary-first relevance filtering before detailed ranking
+- **Rich context files** — point to your own papers/notes for deeper profile matching
+- **"Further reading" links** — related papers and references for top-scored results
+- **Slack integration** — daily digests in Slack channels
