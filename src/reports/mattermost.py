@@ -210,13 +210,16 @@ def format_report_message(
             else:
                 title_cell = title
 
-            # Add one-line takeaway if available
+            # Add one-line takeaway if available (capped to avoid table overflow)
             takeaway = rp.abstract_takeaway
             if not takeaway:
                 takeaway = rp.summary.split(". ")[0] if rp.summary else ""
                 if takeaway and not takeaway.endswith("."):
                     takeaway += "."
             if takeaway:
+                max_takeaway = 120
+                if len(takeaway) > max_takeaway:
+                    takeaway = takeaway[:max_takeaway].rsplit(" ", 1)[0] + "…"
                 title_cell += f" — *{takeaway}*"
 
             lines.append(f"| **{rp.relevance_score}** | {title_cell} |")
