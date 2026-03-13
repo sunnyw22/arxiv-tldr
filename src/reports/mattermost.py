@@ -111,15 +111,22 @@ def post_webhook(
         return False
 
 
+def _escape_pipe(text: str) -> str:
+    """Escape pipe characters so they don't break Mattermost table columns."""
+    return text.replace("|", "\\|")
+
+
 def format_intro_message(
+    ranked_papers: list[RankedPaper],
     pipeline_stats: dict,
     model: str = "",
     llm_config: LLMConfig | None = None,
     profile: UserProfile | None = None,
 ) -> str:
-    """Build the first message: funny intro + quote + profile + scoring rubric.
+    """Build the first message: intro + compact paper table.
 
     Args:
+        ranked_papers: Scored papers (already filtered/sorted).
         pipeline_stats: Dict with pipeline statistics.
         model: LLM model name for attribution.
         llm_config: LLM config for quote generation.
@@ -131,6 +138,8 @@ def format_intro_message(
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     total_fetched = pipeline_stats.get("total_fetched", 0)
     bot = _bot_name(model)
+    n_papers = len(ranked_papers)
+    model_label = short_model_name(model) if model else ""
 
     # Generate flavor text (quote + tagline)
     quote = "I read all the papers so you don't have to. You're welcome."
@@ -162,29 +171,7 @@ def format_intro_message(
 
     lines.append("**Scoring rubric:**")
     lines.append(SCORING_RUBRIC)
-
-    return "\n".join(lines)
-
-
-def format_report_message(
-    ranked_papers: list[RankedPaper],
-    pipeline_stats: dict,
-    model: str = "",
-) -> str:
-    """Build the second message: the actual scored paper table.
-
-    Args:
-        ranked_papers: Scored papers (already filtered/sorted).
-        pipeline_stats: Dict with pipeline statistics.
-        model: LLM model name for attribution.
-
-    Returns:
-        Markdown string for the report message.
-    """
-    n_papers = len(ranked_papers)
-    model_label = short_model_name(model) if model else ""
-
-    lines: list[str] = []
+    lines.append("")
 
     # Pipeline breakdown
     kw_passed = pipeline_stats.get("keyword_passed")
@@ -196,32 +183,20 @@ def format_report_message(
         parts = [f"Keyword filter: {kw_passed} passed, {kw_rejected} rejected"]
         parts.append(f"LLM scored: {total_scored}")
         parts.append(f"**{n_papers} made the cut**")
-        lines.append(" | ".join(parts))
+        lines.append(" · ".join(parts))
         lines.append("")
 
+    # Compact paper table (score + title only)
     if ranked_papers:
         lines.append("| Score | Paper |")
         lines.append("|:---:|:---|")
         for rp in ranked_papers:
             link_url = rp.paper.source_url or rp.paper.pdf_url or ""
-            title = rp.paper.title
+            title = _escape_pipe(rp.paper.title)
             if link_url:
                 title_cell = f"[{title}]({link_url})"
             else:
                 title_cell = title
-
-            # Add one-line takeaway if available (capped to avoid table overflow)
-            takeaway = rp.abstract_takeaway
-            if not takeaway:
-                takeaway = rp.summary.split(". ")[0] if rp.summary else ""
-                if takeaway and not takeaway.endswith("."):
-                    takeaway += "."
-            if takeaway:
-                max_takeaway = 120
-                if len(takeaway) > max_takeaway:
-                    takeaway = takeaway[:max_takeaway].rsplit(" ", 1)[0] + "…"
-                title_cell += f" — *{takeaway}*"
-
             lines.append(f"| **{rp.relevance_score}** | {title_cell} |")
     else:
         lines.append(
@@ -230,17 +205,58 @@ def format_report_message(
         )
 
     lines.append("")
-
-    # Footer
-    footer_parts = []
     if model_label:
-        footer_parts.append(f"Scored by {model_label}")
-    if footer_parts:
-        lines.append(f"*{' | '.join(footer_parts)}*")
+        lines.append(f"*Scored by {model_label}*")
 
     message = "\n".join(lines)
+    if len(message) > MAX_MESSAGE_LEN:
+        message = message[:MAX_MESSAGE_LEN] + "\n\n*... message truncated*"
 
-    # Truncate if too long
+    return message
+
+
+def format_summary_message(
+    ranked_papers: list[RankedPaper],
+) -> str:
+    """Build the second message: detailed per-paper summaries.
+
+    Mattermost auto-collapses messages exceeding 700 characters or 5 line
+    breaks with a "Show More" toggle, so the detailed summaries stay tidy
+    in the channel while remaining fully accessible.
+
+    Args:
+        ranked_papers: Scored papers (already filtered/sorted).
+
+    Returns:
+        Markdown string for the summary message.
+    """
+    if not ranked_papers:
+        return ""
+
+    lines: list[str] = ["#### Paper Summaries", ""]
+
+    for rp in ranked_papers:
+        title = _escape_pipe(rp.paper.title)
+        link_url = rp.paper.source_url or rp.paper.pdf_url or ""
+        if link_url:
+            header = f"**[{title}]({link_url})** (score: {rp.relevance_score})"
+        else:
+            header = f"**{title}** (score: {rp.relevance_score})"
+        lines.append(header)
+
+        if rp.abstract_takeaway:
+            lines.append(f"*{_escape_pipe(rp.abstract_takeaway)}*")
+
+        if rp.why_relevant:
+            lines.append(f"Why relevant: {_escape_pipe(rp.why_relevant)}")
+
+        if rp.summary:
+            lines.append(_escape_pipe(rp.summary))
+
+        lines.append("---")
+
+    message = "\n\n".join(lines)
+
     if len(message) > MAX_MESSAGE_LEN:
         message = message[:MAX_MESSAGE_LEN] + "\n\n*... message truncated*"
 
@@ -257,8 +273,8 @@ def send_digest_messages(
 ) -> bool:
     """Send the two-part digest to Mattermost.
 
-    Message 1: Intro + quote of the day + profile + scoring rubric
-    Message 2: Scored paper table
+    Message 1: Intro + profile + scoring rubric + compact paper table
+    Message 2: Detailed per-paper summaries (auto-collapsed by Mattermost)
 
     Args:
         webhook_url: Incoming webhook URL (secret).
@@ -274,11 +290,14 @@ def send_digest_messages(
     bot = _bot_name(model)
 
     intro = format_intro_message(
-        pipeline_stats, model=model, llm_config=llm_config, profile=profile,
+        ranked_papers, pipeline_stats,
+        model=model, llm_config=llm_config, profile=profile,
     )
     ok1 = post_webhook(webhook_url, intro, username=bot)
 
-    report = format_report_message(ranked_papers, pipeline_stats, model=model)
-    ok2 = post_webhook(webhook_url, report, username=bot)
+    summary = format_summary_message(ranked_papers)
+    ok2 = True
+    if summary:
+        ok2 = post_webhook(webhook_url, summary, username=bot)
 
     return ok1 and ok2

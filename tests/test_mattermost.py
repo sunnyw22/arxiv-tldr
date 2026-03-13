@@ -10,8 +10,9 @@ from src.core.models import Paper
 from src.ranking.rerank_llm import RankedPaper
 from src.reports.mattermost import (
     _bot_name,
+    _escape_pipe,
     format_intro_message,
-    format_report_message,
+    format_summary_message,
     post_webhook,
     send_digest_messages,
 )
@@ -44,6 +45,7 @@ def _make_ranked(
     summary="A good paper.",
     source_url="https://arxiv.org/abs/1234.5678",
     abstract_takeaway="Key finding.",
+    why_relevant="Directly useful.",
 ):
     return RankedPaper(
         paper=_make_paper(title=title, source_url=source_url),
@@ -51,7 +53,24 @@ def _make_ranked(
         reasoning="Relevant.",
         summary=summary,
         abstract_takeaway=abstract_takeaway,
+        why_relevant=why_relevant,
     )
+
+
+# ---------------------------------------------------------------------------
+# TestEscapePipe
+# ---------------------------------------------------------------------------
+
+
+class TestEscapePipe:
+    def test_escapes_pipe_in_math(self):
+        assert _escape_pipe("P(A|B)") == "P(A\\|B)"
+
+    def test_no_pipe_unchanged(self):
+        assert _escape_pipe("hello world") == "hello world"
+
+    def test_multiple_pipes(self):
+        assert _escape_pipe("a|b|c") == "a\\|b\\|c"
 
 
 # ---------------------------------------------------------------------------
@@ -78,22 +97,52 @@ class TestBotName:
 class TestFormatIntroMessage:
     def test_contains_date_and_count(self):
         stats = {"total_fetched": 500}
-        msg = format_intro_message(stats, model="openai/gpt-5.4")
+        papers = [_make_ranked()]
+        msg = format_intro_message(papers, stats, model="openai/gpt-5.4")
 
         assert "T-Gpt-5.4" in msg
         assert "500 papers" in msg
         assert "arXiv" in msg
 
     def test_contains_rubric(self):
-        msg = format_intro_message({"total_fetched": 10})
+        msg = format_intro_message([], {"total_fetched": 10})
         assert "9-10" in msg
         assert "Must-read" in msg
         assert "7-8" in msg
 
     def test_contains_quote(self):
-        msg = format_intro_message({"total_fetched": 10})
+        msg = format_intro_message([], {"total_fetched": 10})
         # Fallback quote when no llm_config
         assert "You're welcome" in msg
+
+    def test_contains_paper_table(self):
+        papers = [
+            _make_ranked(title="Alpha Paper", score=9),
+            _make_ranked(title="Beta Paper", score=7),
+        ]
+        stats = {"total_fetched": 50, "keyword_passed": 20, "keyword_rejected": 30, "llm_scored": 20}
+        msg = format_intro_message(papers, stats)
+
+        assert "| Score | Paper |" in msg
+        assert "Alpha Paper" in msg
+        assert "Beta Paper" in msg
+        assert "**9**" in msg
+        assert "**7**" in msg
+        assert "2 made the cut" in msg
+
+    def test_empty_papers_shows_fallback(self):
+        msg = format_intro_message([], {"total_fetched": 50})
+        assert "impressively high" in msg
+
+    def test_escapes_pipe_in_title(self):
+        papers = [_make_ranked(title="P(A|B) Estimation")]
+        msg = format_intro_message(papers, {"total_fetched": 10})
+        assert "P(A\\|B)" in msg
+        # Should not have an unescaped pipe breaking the table
+        for line in msg.split("\n"):
+            if "P(A" in line:
+                # The table row should have exactly 3 pipes: | score | title |
+                assert line.count("|") == 4  # leading pipe counted in format
 
     @patch("src.reports.mattermost.call_llm")
     def test_generates_llm_flavor(self, mock_llm):
@@ -103,7 +152,7 @@ class TestFormatIntroMessage:
         )
         config = LLMConfig(model="openai/gpt-5.4")
         msg = format_intro_message(
-            {"total_fetched": 10}, model="openai/gpt-5.4", llm_config=config
+            [], {"total_fetched": 10}, model="openai/gpt-5.4", llm_config=config
         )
         assert "Your papers are now my papers." in msg
         assert "Resistance to reading is futile." in msg
@@ -114,68 +163,82 @@ class TestFormatIntroMessage:
         mock_llm.side_effect = RuntimeError("API down")
         config = LLMConfig(model="openai/gpt-5.4")
         msg = format_intro_message(
-            {"total_fetched": 10}, llm_config=config
+            [], {"total_fetched": 10}, llm_config=config
         )
         assert "You're welcome" in msg
 
+    def test_model_in_footer(self):
+        papers = [_make_ranked()]
+        msg = format_intro_message(papers, {"total_fetched": 10}, model="openai/gpt-5.4")
+        assert "Gpt-5.4" in msg
+
+    def test_truncation_on_very_long_message(self):
+        papers = [
+            _make_ranked(title=f"Paper with a very long title number {i} " * 5)
+            for i in range(100)
+        ]
+        msg = format_intro_message(papers, {"total_fetched": 500})
+        assert len(msg) <= 14100
+
 
 # ---------------------------------------------------------------------------
-# TestFormatReportMessage
+# TestFormatSummaryMessage
 # ---------------------------------------------------------------------------
 
 
-class TestFormatReportMessage:
+class TestFormatSummaryMessage:
     def test_basic_format(self):
         papers = [
             _make_ranked(title="Alpha Paper", score=9),
             _make_ranked(title="Beta Paper", score=7),
         ]
-        stats = {"total_fetched": 50, "keyword_passed": 20, "keyword_rejected": 30, "llm_scored": 20}
-        msg = format_report_message(papers, stats)
+        msg = format_summary_message(papers)
 
+        assert "Paper Summaries" in msg
         assert "Alpha Paper" in msg
         assert "Beta Paper" in msg
-        assert "**9**" in msg
-        assert "**7**" in msg
-        assert "2 made the cut" in msg
+        assert "score: 9" in msg
+        assert "score: 7" in msg
 
-    def test_empty_papers(self):
-        msg = format_report_message([], {"total_fetched": 50})
-        assert "impressively high" in msg
+    def test_empty_papers_returns_empty(self):
+        msg = format_summary_message([])
+        assert msg == ""
 
-    def test_table_format(self):
-        papers = [_make_ranked(score=8)]
-        msg = format_report_message(papers, {"total_fetched": 10})
-        assert "| Score | Paper |" in msg
-        assert "**8**" in msg
-
-    def test_uses_abstract_takeaway(self):
+    def test_includes_takeaway(self):
         papers = [_make_ranked(abstract_takeaway="Important finding.")]
-        msg = format_report_message(papers, {"total_fetched": 10})
+        msg = format_summary_message(papers)
         assert "Important finding." in msg
 
-    def test_falls_back_to_summary_first_sentence(self):
-        papers = [
-            _make_ranked(abstract_takeaway="", summary="First sentence. Second sentence.")
-        ]
-        msg = format_report_message(papers, {"total_fetched": 10})
-        assert "First sentence." in msg
-        assert "Second sentence" not in msg
+    def test_includes_why_relevant(self):
+        papers = [_make_ranked(why_relevant="Matches your research on X.")]
+        msg = format_summary_message(papers)
+        assert "Matches your research on X." in msg
 
-    def test_model_in_footer(self):
-        papers = [_make_ranked()]
-        msg = format_report_message(papers, {"total_fetched": 10}, model="openai/gpt-5.4")
-        assert "Gpt-5.4" in msg
+    def test_includes_summary(self):
+        papers = [_make_ranked(summary="A detailed summary of the paper.")]
+        msg = format_summary_message(papers)
+        assert "A detailed summary of the paper." in msg
+
+    def test_escapes_pipe_in_content(self):
+        papers = [_make_ranked(
+            title="P(A|B) Methods",
+            abstract_takeaway="Computes P(X|Y) efficiently.",
+            summary="The method for P(A|B) is novel.",
+        )]
+        msg = format_summary_message(papers)
+        assert "P(A\\|B)" in msg
+        assert "P(X\\|Y)" in msg
 
     def test_truncation_on_very_long_message(self):
         papers = [
             _make_ranked(
-                title=f"Paper with a very long title number {i} " * 5,
-                abstract_takeaway="A " * 200,
+                title=f"Paper {i}",
+                summary="A " * 500,
+                abstract_takeaway="B " * 200,
             )
             for i in range(100)
         ]
-        msg = format_report_message(papers, {"total_fetched": 500})
+        msg = format_summary_message(papers)
         assert len(msg) <= 14100
 
 
@@ -257,7 +320,7 @@ class TestSendDigestMessages:
     @patch("src.reports.mattermost._generate_flavor")
     def test_returns_false_if_any_fails(self, mock_flavor, mock_post):
         mock_flavor.return_value = ("Quote.", "Tagline.")
-        mock_post.side_effect = [True, False]  # intro ok, report fails
+        mock_post.side_effect = [True, False]  # intro ok, summary fails
 
         result = send_digest_messages(
             "https://mm.example.com/hooks/abc",
@@ -265,3 +328,16 @@ class TestSendDigestMessages:
         )
 
         assert result is False
+
+    @patch("src.reports.mattermost.post_webhook")
+    def test_skips_summary_when_no_papers(self, mock_post):
+        mock_post.return_value = True
+
+        result = send_digest_messages(
+            "https://mm.example.com/hooks/abc",
+            [], {"total_fetched": 50},
+        )
+
+        assert result is True
+        # Only intro message posted, no summary
+        assert mock_post.call_count == 1
