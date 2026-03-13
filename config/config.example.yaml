@@ -8,12 +8,14 @@ profile:
   # Specific topic interests (used for relevance scoring)
   topic_interests:
     - "machine learning"
-    - "deep learning"
+    - "transformers"
+    - "Graph Neural Networks"
+    - "attention"
     - "particle physics"
     - "particle reconstruction"
     - "track reconstruction"
     - "vertex reconstruction"
-    - "tagging"
+    - "jet tagging"
     - "triggers"
     - "CERN"
     - "ATLAS"
@@ -34,7 +36,7 @@ profile:
     CERN or future colliders.
 
   # Your expertise level: beginner, intermediate, advanced, expert
-  expertise_level: "advanced"
+  expertise_level: "expert"
 
 # --- Sources ---
 # Configures where to look for papers (source-specific settings)
