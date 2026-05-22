@@ -89,6 +89,12 @@ output:
   # Posts digest via incoming webhook — set MATTERMOST_WEBHOOK_URL env var.
   # Create a webhook in Mattermost: Integrations > Incoming Webhooks.
   # The webhook URL is a secret — never put it in config or logs.
+  #
+  # Delivery is split into multiple messages: an overview table, then newly
+  # published papers, then v2+ re-published papers. Each section is further
+  # split so it never exceeds the per-message budget (no silent truncation).
+  # Optional: set MATTERMOST_MAX_POST_CHARS to match your server's max post
+  # size if it differs from the default 14000 (some servers cap at 4000).
 
 # --- LLM Provider ---
 llm:
