@@ -102,7 +102,7 @@ llm:
   model: "openai/gpt-5.5"
 
   # Temperature for summarization
-  temperature: 0.3
+  temperature: 1
 
   # Maximum tokens per summary
   max_tokens: 4096
