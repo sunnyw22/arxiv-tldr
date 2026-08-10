@@ -5,6 +5,7 @@ fetch → dedup → save to DB → score reuse check → LLM rank → report →
 """
 
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -23,6 +24,14 @@ from src.profiles.schema import UserProfile
 from src.storage.sqlite import get_connection, load_paper
 from src.workflows.daily_digest import run_daily_digest
 
+# The pipeline's default (non-RSS, non-active-search) mode fetches the last 7 days
+# on a first run, so fixture papers must fall inside that window. Dates are derived
+# from "now" rather than hardcoded — hardcoded dates silently drop every paper once
+# the window moves past them, turning these tests green-to-red on a calendar.
+_RECENT = datetime.now(timezone.utc) - timedelta(days=1)
+_RECENT_TIMESTAMP = _RECENT.strftime("%Y-%m-%dT%H:%M:%SZ")
+_RECENT_DATE = _RECENT.strftime("%Y-%m-%d")
+
 
 def _make_arxiv_xml(papers: list[dict]) -> str:
     """Generate arXiv API XML response from paper dicts."""
@@ -36,8 +45,8 @@ def _make_arxiv_xml(papers: list[dict]) -> str:
             <id>http://arxiv.org/abs/{p['id']}</id>
             <title>{p['title']}</title>
             <summary>{p['abstract']}</summary>
-            <published>{p.get('date', '2026-03-07T12:00:00Z')}</published>
-            <updated>{p.get('date', '2026-03-07T12:00:00Z')}</updated>
+            <published>{p.get('date', _RECENT_TIMESTAMP)}</published>
+            <updated>{p.get('date', _RECENT_TIMESTAMP)}</updated>
             {authors}
             <arxiv:primary_category xmlns:arxiv="http://arxiv.org/schemas/atom" term="{primary}"/>
             {cats}
@@ -69,7 +78,7 @@ def _make_inspire_json(papers: list[dict]) -> dict:
                 "arxiv_eprints": [],
                 "inspire_categories": [{"term": "Experiment-HEP"}],
                 "keywords": [],
-                "earliest_date": p.get("date", "2026-03-07"),
+                "earliest_date": p.get("date", _RECENT_DATE),
                 "dois": [],
             },
         }
