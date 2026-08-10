@@ -2,10 +2,13 @@ name: Daily Radar
 
 on:
   schedule:
-    # Run Mon-Fri at 02:00 UTC (~1-2 hours after arXiv announcements at ~00:00 UTC)
-    # arXiv announces Sun-Thu evenings at 20:00 ET (00:00-01:00 UTC next day).
+    # Run Mon-Fri at 04:00 UTC. arXiv announces Sun-Thu evenings at 20:00 ET,
+    # but the RSS feeds are not rebuilt until ~04:00 UTC — querying earlier
+    # returns an empty feed and the digest silently produces nothing.
+    # GitHub only ever delays scheduled runs, never starts them early, so a
+    # 04:00 cron lands safely after the rebuild.
     # Monday's run catches Sunday evening's announcement (Thu-Fri submissions + weekend backlog).
-    - cron: "0 2 * * 1-5"
+    - cron: "0 4 * * 1-5"
   workflow_dispatch:
     # Manual trigger for testing — can run anytime
     inputs:
